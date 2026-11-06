@@ -1,0 +1,32 @@
+[Unit]
+Description=MiniAgent Telegram worker
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=miniagent
+Group=miniagent
+WorkingDirectory=/opt/miniagent
+EnvironmentFile=/etc/miniagent.env
+ExecStart=/usr/bin/python3 -m miniagent telegram
+Restart=on-failure
+RestartSec=10
+StateDirectory=miniagent
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=400M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target
