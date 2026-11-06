@@ -92,6 +92,7 @@ def telegram_loop(config):
         queue.migrate_offset(int(offset_file.read_text().strip()))
     queue.recover()
     queue.seed_learning()
+    queue.seed_journal()
     budget = Budget(config.db_path, config.daily_usd)
     stop_event = threading.Event()
     try:
@@ -197,7 +198,7 @@ def telegram_loop(config):
                     parts = task.split(maxsplit=2)
                     command = parts[0].split('@')[0].lower()
                     if command in ('/start', '/help'):
-                        send('Send a task as a message. Commands: /status, /health, /budget, /jobs, /job ID, /cancel ID, /questions, /answer ID TEXT, /pause, /resume, /schedule HOURS TASK, /objectives, /unschedule ID, /preview PATH, /publish PATH SHA256, /publish_site SHA256, /preview_bundle DIR, /publish_bundle DIR SHA256. Recurring tasks start after the interval, minimum 6 hours.')
+                        send('Send a task as a message. Commands: /status, /health, /budget, /jobs, /job ID, /cancel ID, /questions, /answer ID TEXT, /pause, /resume, /schedule HOURS TASK, /objectives, /unschedule ID, /journal [daily|weekly], /preview PATH, /publish PATH SHA256, /publish_update PATH SHA256 [direct], /publish_site SHA256, /preview_bundle DIR, /publish_bundle DIR SHA256. Recurring tasks start after the interval, minimum 6 hours.')
                     elif command == '/status':
                         spent, limit = budget.today()
                         send(f"{'Paused' if queue.paused() else 'Running'}; jobs: {queue.counts()}; recurring objectives: {len(queue.objectives())}; model ledger today (UTC): ${spent/1e6:.4f} / ${limit/1e6:.2f}.")
@@ -353,6 +354,27 @@ def telegram_loop(config):
                             send('Draft pull request created: ' + url)
                         except (IndexError, ValueError, OSError, UnicodeError, GitHubError) as exc:
                             send('Publish failed: ' + (str(exc)[:400] if isinstance(exc, (ValueError, GitHubError)) else 'Check directory and configuration.'))
+                    elif command == '/journal':
+                        try:
+                            kind = parts[1].lower() if len(parts) > 1 else 'daily'
+                            from .tools import ROOT
+                            from .journal import generate_daily_journal, generate_weekly_recap
+                            if kind == 'weekly':
+                                res = generate_weekly_recap(queue, ROOT, budget=budget)
+                                send(f"Weekly recap compiled to {res['path']}\nSHA-256: {res['sha256']}\n\nTo open draft PR: /publish_update {res['path']} {res['sha256']}\nTo commit directly to main: /publish_update {res['path']} {res['sha256']} direct")
+                            else:
+                                res = generate_daily_journal(queue, ROOT, budget=budget)
+                                send(f"Daily log compiled to {res['path']}\nSHA-256: {res['sha256']}\n\nTo open draft PR: /publish_update {res['path']} {res['sha256']}\nTo commit directly to main: /publish_update {res['path']} {res['sha256']} direct")
+                        except Exception as exc:
+                            send('Could not compile journal: ' + type(exc).__name__)
+                    elif command == '/publish_update':
+                        tokens = task.split()
+                        try:
+                            direct = len(tokens) > 3 and tokens[3].lower() == 'direct'
+                            url = configured_github().publish_update(tokens[1], tokens[2], direct_commit=direct)
+                            send(('Direct update committed: ' if direct else 'Draft update pull request created: ') + url)
+                        except (IndexError, ValueError, OSError, UnicodeError, GitHubError) as exc:
+                            send('Publish failed: ' + (str(exc)[:400] if isinstance(exc, (ValueError, GitHubError)) else 'Check path and configuration.'))
                     else:
                         send('Unknown command. Use /help.')
                     continue

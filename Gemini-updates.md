@@ -156,8 +156,32 @@ As instructed, we evaluated whether spawning 10 separate subagents would reduce 
 
 ## 4. Test Suite Status
 
-All **94 test cases** across all test modules in `miniAgent/tests` are passing:
+All **99 test cases** across all 16 test modules in `miniAgent/tests` are passing:
 ```sh
-Ran 94 tests in 53.054s
+Ran 99 tests in 46.916s
 OK
 ```
+
+---
+
+## 5. GitHub Tool Modernization & Autonomous Journaling
+
+### A. Repository Architecture Rationale: Same Repo vs. Separate Repo
+* **Recommendation**: **Same Repository** (`RustyDrops/miniAgent-e2-micro`) using an `updates/` directory (`updates/daily/` and `updates/weekly/`).
+* **Why**:
+  1. **Consolidated Community Reach & Traffic**: Having daily logs and weekly recaps in the main project repository keeps all stars, watchers, forks, and traffic in one place rather than dividing community engagement across two repos.
+  2. **Active Pulse & Commit Activity**: Autonomous daily updates keep the repository's commit activity graph green and active on GitHub's front page, demonstrating a living, self-improving agent.
+  3. **Zero CI Overhead**: `.github/workflows/test.yml` includes `paths-ignore: ['updates/**', 'docs/**', '*.md']`. Automated journal commits will not trigger test matrix runners or consume any GitHub Actions minutes.
+  4. **Dual Publishing Modes**:
+     - Draft PR mode (`/publish_update PATH SHA256`): Safe human-in-the-loop review.
+     - Direct commit mode (`/publish_update PATH SHA256 direct`): Hands-off autonomous publishing directly to `main`.
+
+### B. Daily Progress Logs & Weekly Recap Rollups
+* **Files**: `miniagent/journal.py`, `miniagent/github.py`, `miniagent/queue.py`, `miniagent/tools.py`, `miniagent/__main__.py`, `tests/test_journal.py`, `tests/test_github.py`
+* **Features**:
+  - `generate_daily_journal`: Gathers 24-hour UTC telemetry from `task_history` (jobs executed, success/failure rate, tool call counts, microdollar cost converted to USD, execution latency), curates new learning notes from the knowledge base, formats a clean markdown report, and writes to `updates/daily/YYYY-MM-DD.md`.
+  - `generate_weekly_recap`: Aggregates 7-day performance, computes weekly budget pacing vs the $7.00/week limit, tracks cost efficiency per task, highlights curated learnings and canary stability, and writes to `updates/weekly/YYYY-Www.md`.
+  - `publish_update`: Modern GitHub REST API v3 integration with `X-GitHub-Api-Version: 2022-11-28`, supporting both Draft PR and direct commit modes.
+  - Automatic Recurring Objectives: `seed_journal()` installs 24h daily progress logging and 168h weekly recap rollups into the SQLite queue.
+  - Telegram Integration: `/journal [daily|weekly]` and `/publish_update PATH SHA256 [direct]` commands.
+

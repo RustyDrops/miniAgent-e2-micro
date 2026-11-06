@@ -109,6 +109,31 @@ class Queue:
             db.execute("INSERT INTO settings(key,value) VALUES('learning_seeded','1')")
             db.commit()
 
+    def seed_journal(self):
+        """Install default daily log and weekly recap objectives once."""
+        with closing(self.connect()) as db:
+            db.execute('BEGIN IMMEDIATE')
+            if db.execute("SELECT 1 FROM settings WHERE key='journal_seeded'").fetchone():
+                db.commit()
+                return
+            count = db.execute('SELECT COUNT(*) FROM objectives WHERE enabled=1').fetchone()[0]
+            if count < 4:
+                daily_task = ('Compile a daily progress log for today using generate_daily_journal. '
+                              'Summarize tasks executed, token spend, learnings recorded, and system health. '
+                              'Save to updates/daily/ and prepare a draft update for review.')
+                interval_daily = 24 * 3600
+                db.execute('INSERT INTO objectives(task,interval_seconds,next_run) VALUES(?,?,?)',
+                           (daily_task, interval_daily, int(time.time()) + interval_daily))
+            if count < 5:
+                weekly_task = ('Compile a weekly recap rollup for this week using generate_weekly_recap. '
+                               'Aggregate all daily telemetry, cost pacing vs $7 budget, curated learnings, and canary stability. '
+                               'Save to updates/weekly/ and prepare a draft update for review.')
+                interval_weekly = 7 * 24 * 3600
+                db.execute('INSERT INTO objectives(task,interval_seconds,next_run) VALUES(?,?,?)',
+                           (weekly_task, interval_weekly, int(time.time()) + interval_weekly))
+            db.execute("INSERT INTO settings(key,value) VALUES('journal_seeded','1')")
+            db.commit()
+
     def add_objective(self, task, hours):
         if not task.strip() or len(task.encode('utf-8')) > 3000 or not 6 <= hours <= 720:
             raise ValueError('Use 6–720 hours and a task of at most 3,000 bytes.')
@@ -304,3 +329,8 @@ class Queue:
                                      FROM task_history WHERE state IN ('failed', 'interrupted', 'cancelled') ORDER BY id DESC LIMIT ?""", (limit,)).fetchall()
             return db.execute("""SELECT id, job_id, task, origin, state, started_at, finished_at, duration_ms, result_excerpt, tool_calls_count, error_type, cost_microdollars
                                  FROM task_history ORDER BY id DESC LIMIT ?""", (limit,)).fetchall()
+
+    def get_history_range(self, start_time, end_time):
+        with closing(self.connect()) as db:
+            return db.execute("""SELECT id, job_id, task, origin, state, started_at, finished_at, duration_ms, result_excerpt, tool_calls_count, error_type, cost_microdollars
+                                 FROM task_history WHERE started_at >= ? AND started_at <= ? ORDER BY id ASC""", (start_time, end_time)).fetchall()

@@ -101,6 +101,20 @@ For a small multi-file project, ask the agent to put related files under one wor
 
 Ask MiniAgent to write research notes as text files, then ask it to build a blog from the chosen drafts. The `build_blog` tool creates a self-contained `site/index.html` in the workspace, escaping draft text and requiring no server-side code or external assets. Review its source through `/preview site/index.html`, or copy the file from the VM to view it in a browser. To propose it as the stable repository homepage, send the `/publish_site SHA256` command shown in the preview. It opens a draft PR that creates or replaces **root `index.html`** on a new branch; review the diff before merging. Each new page replaces the previous homepage, so include all notes you want to retain when regenerating it. A repository configured to [publish GitHub Pages from the root of its default branch](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site) can serve it at the Pages root after you merge the PR and GitHub builds the site. Pages availability depends on your GitHub plan and repository; Pages sites are public. Neither the generator nor the draft PR changes Pages settings or merges the branch. Live GitHub and Pages behavior remains unverified.
 
+## Autonomous Daily Logs & Weekly Recaps
+
+MiniAgent includes built-in capabilities to generate structured daily run logs and weekly recaps documenting its autonomous self-improvement on the $1/day budget:
+- **Daily Progress Logs** (`updates/daily/YYYY-MM-DD.md`): Summarizes daily telemetry (tasks completed, tool calls, model spend, average duration), curated learnings from the knowledge base, and infrastructure health.
+- **Weekly Rollup Recaps** (`updates/weekly/YYYY-Www.md`): Aggregates 7-day performance, weekly budget pacing vs the $7.00/week limit, cost efficiency per task, and stability metrics.
+
+### Repository Architecture Rationale: Same Repo vs. Separate Repo
+- **Centralized Reach & Community Pulse**: Keeping logs and recaps inside the same project repository (`RustyDrops/miniAgent-e2-micro`) under `updates/` ensures that all GitHub stars, watchers, forks, and traffic stay consolidated. Daily autonomous commits keep the project's pulse and commit history active on GitHub's front page.
+- **Zero CI Overhead**: `.github/workflows/test.yml` includes `paths-ignore: ['updates/**', 'docs/**', '*.md']`, ensuring that automated daily/weekly journal updates never consume GitHub Actions runner minutes.
+- **Dual Publishing Modes**:
+  - `/publish_update PATH SHA256`: Creates a dedicated branch and draft PR for human review.
+  - `/publish_update PATH SHA256 direct`: Commits directly to the default branch (`main`) for hands-off autonomous posting.
+  - Send `/journal daily` or `/journal weekly` in Telegram to compile logs on demand.
+
 ## Roadmap
 
 1. Test both real provider integrations, tool calling, accounting and failure handling against low spending limits.

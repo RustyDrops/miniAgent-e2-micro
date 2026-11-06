@@ -96,6 +96,10 @@ SCHEMAS = [
            {}, []),
     schema('generate_architecture_diagram', 'Generate a live Mermaid state flowchart of the active queue, budget, and specialist architecture.',
            {}, []),
+    schema('generate_daily_journal', 'Compile an autonomous daily progress report (tasks, tool calls, costs, learnings, health) to updates/daily/YYYY-MM-DD.md.',
+           {'date': {'type': 'string'}}, []),
+    schema('generate_weekly_recap', 'Compile an autonomous weekly recap rollup of progress, budget pacing vs $7 limit, and learnings to updates/weekly/YYYY-Www.md.',
+           {'week': {'type': 'string'}}, []),
 ]
 
 
@@ -116,8 +120,15 @@ class NoRedirect(HTTPRedirectHandler):
 
 
 def fetch_json(url):
-    # Fixed hosts and paths, never a URL selected by the model. No credentials or redirects.
-    request = Request(url, headers={'User-Agent': 'MiniAgent/0.1 (personal research)', 'Accept': 'application/json'})
+    # Fixed hosts and paths, never a URL selected by the model.
+    headers = {'User-Agent': 'MiniAgent/0.1 (personal research)', 'Accept': 'application/json'}
+    if 'api.github.com' in url:
+        headers['Accept'] = 'application/vnd.github+json'
+        headers['X-GitHub-Api-Version'] = '2022-11-28'
+        token = os.environ.get('MINIAGENT_GITHUB_TOKEN')
+        if token and '\n' not in token and '\r' not in token:
+            headers['Authorization'] = 'Bearer ' + token
+    request = Request(url, headers=headers)
     with build_opener(NoRedirect()).open(request, timeout=15) as response:
         raw = response.read(200001)
     if len(raw) > 200000:
@@ -586,6 +597,26 @@ def _handle_inner(name, args):
             daily_usd = Decimal(os.environ.get('MINIAGENT_DAILY_USD', '0.50'))
             b = Budget(db_p, daily_usd)
             return generate_mermaid_diagram(q, b)
+        if name == 'generate_daily_journal':
+            from decimal import Decimal
+            from .queue import Queue
+            from .budget import Budget
+            from .journal import generate_daily_journal
+            db_p = os.environ.get('MINIAGENT_DB', 'miniagent.db')
+            q = Queue(db_p)
+            daily_usd = Decimal(os.environ.get('MINIAGENT_DAILY_USD', '0.50'))
+            b = Budget(db_p, daily_usd)
+            return json.dumps(generate_daily_journal(q, ROOT, date_str=args.get('date'), budget=b), ensure_ascii=False)
+        if name == 'generate_weekly_recap':
+            from decimal import Decimal
+            from .queue import Queue
+            from .budget import Budget
+            from .journal import generate_weekly_recap
+            db_p = os.environ.get('MINIAGENT_DB', 'miniagent.db')
+            q = Queue(db_p)
+            daily_usd = Decimal(os.environ.get('MINIAGENT_DAILY_USD', '0.50'))
+            b = Budget(db_p, daily_usd)
+            return json.dumps(generate_weekly_recap(q, ROOT, week_str=args.get('week'), budget=b), ensure_ascii=False)
         raise ValueError('Unknown tool')
     except Exception as exc:
         return 'Tool failed: ' + type(exc).__name__

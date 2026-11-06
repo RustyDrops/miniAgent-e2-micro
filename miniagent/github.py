@@ -129,6 +129,59 @@ class GitHub:
             raise ValueError('Homepage changed or hash is invalid; preview it again.')
         return self._publish_files([('index.html', content)], 'homepage', digest, 'SHA-256', homepage=True)
 
+    def publish_update(self, path, expected_hash, direct_commit=False):
+        """Publish a daily or weekly update file to updates/ either via Draft PR or direct commit."""
+        name, content, digest = read_draft(path)
+        if not re.fullmatch(r'[0-9a-f]{64}', expected_hash or '') or digest != expected_hash:
+            raise ValueError('Update file changed or hash is invalid; preview it again.')
+        rel_path = path.replace('\\', '/')
+        if not re.fullmatch(r'updates/(?:daily|weekly)/[A-Za-z0-9_.-]+\.md', rel_path):
+            raise ValueError('Update file must be in updates/daily/ or updates/weekly/')
+
+        info = self.request('GET', '')
+        base = info['default_branch']
+        head = self.request('GET', '/git/ref/heads/' + quote(base, safe=''))['object']['sha']
+
+        existing_sha = None
+        try:
+            existing = self.request('GET', '/contents/' + quote(rel_path, safe='/') + '?ref=' + quote(head, safe=''))
+            if existing is not None:
+                existing_sha = existing.get('sha')
+        except GitHubNotFound:
+            existing_sha = None
+
+        if direct_commit:
+            payload = {'message': f'Post autonomous update: {rel_path}',
+                       'branch': base,
+                       'content': base64.b64encode(content).decode('ascii')}
+            if existing_sha:
+                payload['sha'] = existing_sha
+            res = self.request('PUT', '/contents/' + quote(rel_path, safe='/'), payload)
+            commit_url = res.get('commit', {}).get('html_url', '')
+            return commit_url or f'https://github.com/{self.repo}/blob/{base}/{rel_path}'
+        else:
+            branch = 'miniagent/update-' + uuid4().hex
+            try:
+                self.request('POST', '/git/refs', {'ref': 'refs/heads/' + branch, 'sha': head})
+                payload = {'message': f'Add autonomous update: {rel_path}',
+                           'branch': branch,
+                           'content': base64.b64encode(content).decode('ascii')}
+                if existing_sha:
+                    payload['sha'] = existing_sha
+                self.request('PUT', '/contents/' + quote(rel_path, safe='/'), payload)
+                pr = self.request('POST', '/pulls', {
+                    'title': f'MiniAgent update: {rel_path}',
+                    'head': branch, 'base': base, 'draft': True,
+                    'body': f'Autonomous progress update: {rel_path}\n\nSHA-256: {digest}\n\nInspect telemetry and learnings before merging.'
+                })
+            except Exception as exc:
+                raise GitHubError('Publish did not complete. Check GitHub for branch ' + branch + ' before retrying. ' + type(exc).__name__) from None
+            url = pr.get('html_url', '')
+            parsed = urlsplit(url)
+            if parsed.scheme != 'https' or parsed.hostname != 'github.com' or not parsed.path.startswith('/' + self.repo + '/pull/'):
+                raise GitHubError('Pull request response was unexpected. Check branch ' + branch + ' on GitHub.')
+            return url
+
     def _publish_files(self, files, title, digest, digest_label, homepage=False):
         info = self.request('GET', '')
         base = info['default_branch']

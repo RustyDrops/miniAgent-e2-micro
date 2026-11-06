@@ -128,6 +128,49 @@ class GitHubTests(unittest.TestCase):
                     with self.assertRaises(ValueError): gh.publish_site('0' * 64)
                     api.assert_not_called()
 
+    def test_publish_update_draft_pr_and_direct(self):
+        with tempfile.TemporaryDirectory(dir=os.getcwd()) as directory, patch.object(tools, 'ROOT', Path(directory).resolve()):
+            up_dir = Path(directory) / 'updates' / 'daily'
+            up_dir.mkdir(parents=True)
+            content = b'# Daily Log 2026-11-06\n'
+            (up_dir / '2026-11-06.md').write_bytes(content)
+            digest = hashlib.sha256(content).hexdigest()
+            gh = GitHub('owner/repo', 'secret')
+
+            # 1. Draft PR mode
+            calls_pr = []
+            def req_pr(method, path, payload=None):
+                calls_pr.append((method, path, payload))
+                if path == '': return {'default_branch': 'main'}
+                if path.startswith('/git/ref/heads/'): return {'object': {'sha': 'a' * 40}}
+                if path.startswith('/contents/'):
+                    if method == 'GET': raise GitHubNotFound('not found')
+                    return {}
+                if path == '/pulls': return {'html_url': 'https://github.com/owner/repo/pull/9'}
+                return {}
+            with patch.object(gh, 'request', side_effect=req_pr):
+                url = gh.publish_update('updates/daily/2026-11-06.md', digest, direct_commit=False)
+                self.assertEqual(url, 'https://github.com/owner/repo/pull/9')
+            self.assertTrue(any(c[0] == 'POST' and c[1] == '/pulls' for c in calls_pr))
+
+            # 2. Direct commit mode
+            calls_direct = []
+            def req_direct(method, path, payload=None):
+                calls_direct.append((method, path, payload))
+                if path == '': return {'default_branch': 'main'}
+                if path.startswith('/git/ref/heads/'): return {'object': {'sha': 'a' * 40}}
+                if path.startswith('/contents/'):
+                    if method == 'GET': raise GitHubNotFound('not found')
+                    return {'commit': {'html_url': 'https://github.com/owner/repo/commit/123'}}
+                return {}
+            with patch.object(gh, 'request', side_effect=req_direct):
+                url_direct = gh.publish_update('updates/daily/2026-11-06.md', digest, direct_commit=True)
+                self.assertEqual(url_direct, 'https://github.com/owner/repo/commit/123')
+            puts = [c for c in calls_direct if c[0] == 'PUT']
+            self.assertEqual(len(puts), 1)
+            self.assertEqual(puts[0][2]['branch'], 'main')
+            self.assertEqual(base64.b64decode(puts[0][2]['content']), content)
+
 
 if __name__ == '__main__':
     unittest.main()
