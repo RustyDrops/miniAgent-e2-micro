@@ -171,72 +171,73 @@ class DraftToolsTests(unittest.TestCase):
             self.assertEqual(val_bad['missing_keys'], ['b'])
 
     def test_tinyfish_web_search_and_fetch(self):
-        # When TINYFISH_API_KEY is not configured
-        with patch.dict(os.environ, {'TINYFISH_API_KEY': ''}):
-            res_search = json.loads(tools.handle('web_search', {'query': 'python release'}))
-            self.assertIn('not configured', res_search.get('error', ''))
-            res_fetch = json.loads(tools.handle('web_fetch', {'url': 'https://python.org'}))
-            self.assertIn('not configured', res_fetch.get('error', ''))
+        with tempfile.TemporaryDirectory() as td, patch.object(tools, 'ROOT', Path(td).resolve()), patch.dict(os.environ, {'MINIAGENT_DB': os.path.join(td, 'cache.db')}):
+            # When TINYFISH_API_KEY is not configured
+            with patch.dict(os.environ, {'TINYFISH_API_KEY': ''}):
+                res_search = json.loads(tools.handle('web_search', {'query': 'python release'}))
+                self.assertIn('not configured', res_search.get('error', ''))
+                res_fetch = json.loads(tools.handle('web_fetch', {'url': 'https://python.org'}))
+                self.assertIn('not configured', res_fetch.get('error', ''))
 
-        # When TINYFISH_API_KEY is configured
-        with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {'TINYFISH_API_KEY': 'tf_test_key_123', 'MINIAGENT_DB': os.path.join(td, 'fresh.db')}):
-            # Test web_search
-            mock_search_data = {
-                'query': 'python 3.12',
-                'results': [
-                    {'title': 'Python 3.12 Release Notes', 'url': 'https://docs.python.org/3.12/', 'snippet': 'New features in Python 3.12.'},
-                    {'title': 'YouTube Video on 3.12', 'url': 'https://www.youtube.com/watch?v=123', 'snippet': 'Watch video.'},
-                    {'title': 'PEP 695 Type Parameter Syntax', 'url': 'https://peps.python.org/pep-0695/', 'snippet': 'Type parameters syntax.'}
-                ]
-            }
-            with patch('miniagent.tools.build_opener') as opener:
-                mock_resp = unittest.mock.MagicMock()
-                mock_resp.read.return_value = json.dumps(mock_search_data).encode('utf-8')
-                mock_resp.__enter__.return_value = mock_resp
-                opener.return_value.open.return_value = mock_resp
+            # When TINYFISH_API_KEY is configured
+            with patch.dict(os.environ, {'TINYFISH_API_KEY': 'tf_test_key_123'}):
+                # Test web_search
+                mock_search_data = {
+                    'query': 'python 3.12',
+                    'results': [
+                        {'title': 'Python 3.12 Release Notes', 'url': 'https://docs.python.org/3.12/', 'snippet': 'New features in Python 3.12.'},
+                        {'title': 'YouTube Video on 3.12', 'url': 'https://www.youtube.com/watch?v=123', 'snippet': 'Watch video.'},
+                        {'title': 'PEP 695 Type Parameter Syntax', 'url': 'https://peps.python.org/pep-0695/', 'snippet': 'Type parameters syntax.'}
+                    ]
+                }
+                with patch('miniagent.tools.build_opener') as opener:
+                    mock_resp = unittest.mock.MagicMock()
+                    mock_resp.read.return_value = json.dumps(mock_search_data).encode('utf-8')
+                    mock_resp.__enter__.return_value = mock_resp
+                    opener.return_value.open.return_value = mock_resp
 
-                res = json.loads(tools.handle('web_search', {'query': 'python 3.12'}))
-                self.assertEqual(res['query'], 'python 3.12')
-                # YouTube was filtered out by LOW_SIGNAL_DOMAINS
-                self.assertEqual(res['count'], 2)
-                urls = [r['url'] for r in res['results']]
-                self.assertIn('https://docs.python.org/3.12/', urls)
-                self.assertNotIn('https://www.youtube.com/watch?v=123', urls)
+                    res = json.loads(tools.handle('web_search', {'query': 'python 3.12'}))
+                    self.assertEqual(res['query'], 'python 3.12')
+                    # YouTube was filtered out by LOW_SIGNAL_DOMAINS
+                    self.assertEqual(res['count'], 2)
+                    urls = [r['url'] for r in res['results']]
+                    self.assertIn('https://docs.python.org/3.12/', urls)
+                    self.assertNotIn('https://www.youtube.com/watch?v=123', urls)
 
-                # Verify request header and URL
-                call_args = opener.return_value.open.call_args[0]
-                req = call_args[0]
-                self.assertEqual(req.headers.get('X-api-key'), 'tf_test_key_123')
-                self.assertTrue(req.full_url.startswith('https://api.search.tinyfish.ai?'))
+                    # Verify request header and URL
+                    call_args = opener.return_value.open.call_args[0]
+                    req = call_args[0]
+                    self.assertEqual(req.headers.get('X-api-key'), 'tf_test_key_123')
+                    self.assertTrue(req.full_url.startswith('https://api.search.tinyfish.ai?'))
 
-            # Test web_fetch
-            mock_fetch_data = {
-                'results': [
-                    {
-                        'url': 'https://docs.python.org/3.12/',
-                        'title': 'Python 3.12 Documentation',
-                        'text': '# Python 3.12\n\nWelcome to Python 3.12 release notes.' + ' Details...' * 100,
-                        'format': 'markdown'
-                    }
-                ],
-                'errors': []
-            }
-            with patch('miniagent.tools.build_opener') as opener:
-                mock_resp = unittest.mock.MagicMock()
-                mock_resp.read.return_value = json.dumps(mock_fetch_data).encode('utf-8')
-                mock_resp.__enter__.return_value = mock_resp
-                opener.return_value.open.return_value = mock_resp
+                # Test web_fetch
+                mock_fetch_data = {
+                    'results': [
+                        {
+                            'url': 'https://docs.python.org/3.12/',
+                            'title': 'Python 3.12 Documentation',
+                            'text': '# Python 3.12\n\nWelcome to Python 3.12 release notes.' + ' Details...' * 100,
+                            'format': 'markdown'
+                        }
+                    ],
+                    'errors': []
+                }
+                with patch('miniagent.tools.build_opener') as opener:
+                    mock_resp = unittest.mock.MagicMock()
+                    mock_resp.read.return_value = json.dumps(mock_fetch_data).encode('utf-8')
+                    mock_resp.__enter__.return_value = mock_resp
+                    opener.return_value.open.return_value = mock_resp
 
-                res = json.loads(tools.handle('web_fetch', {'url': 'https://docs.python.org/3.12/'}))
-                self.assertEqual(res['source'], 'https://docs.python.org/3.12/')
-                self.assertEqual(res['title'], 'Python 3.12 Documentation')
-                self.assertTrue(res['excerpt'].startswith('# Python 3.12'))
-                self.assertIsNotNone(res['next_offset'])
+                    res = json.loads(tools.handle('web_fetch', {'url': 'https://docs.python.org/3.12/'}))
+                    self.assertEqual(res['source'], 'https://docs.python.org/3.12/')
+                    self.assertEqual(res['title'], 'Python 3.12 Documentation')
+                    self.assertTrue(res['excerpt'].startswith('# Python 3.12'))
+                    self.assertIsNotNone(res['next_offset'])
 
-                call_args = opener.return_value.open.call_args[0]
-                req = call_args[0]
-                self.assertEqual(req.headers.get('X-api-key'), 'tf_test_key_123')
-                self.assertEqual(req.get_method(), 'POST')
+                    call_args = opener.return_value.open.call_args[0]
+                    req = call_args[0]
+                    self.assertEqual(req.headers.get('X-api-key'), 'tf_test_key_123')
+                    self.assertEqual(req.get_method(), 'POST')
 
     def test_task_history_cost_estimator_and_ast_linter(self):
         with tempfile.TemporaryDirectory(dir=os.getcwd()) as directory, patch.object(tools, 'ROOT', Path(directory).resolve()):

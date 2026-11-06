@@ -106,6 +106,10 @@ SCHEMAS = [
 def safe_path(name):
     if not isinstance(name, str) or not name or len(name) > 200:
         raise ValueError('Invalid path')
+    try:
+        ROOT.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
     path = (ROOT / name).resolve()
     if path == ROOT or not path.is_relative_to(ROOT):
         raise ValueError('Path outside workspace')
@@ -452,7 +456,6 @@ def _handle_inner(name, args):
             return json.dumps(read_wikipedia(args['title'], args.get('offset', 0)), ensure_ascii=False)
         if name == 'read_github_file':
             return json.dumps(read_github_file(args['repository'], args['path'], args.get('offset', 0)), ensure_ascii=False)
-        ROOT.mkdir(parents=True, exist_ok=True)
         if name == 'test_python_draft':
             from .sandbox import run_python_tests
             try:
@@ -460,6 +463,10 @@ def _handle_inner(name, args):
             except RuntimeError as exc:
                 return 'Sandbox unavailable: ' + str(exc)
         if name in ('remember_learning', 'find_learning', 'recall_learning'):
+            try:
+                ROOT.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                pass
             from . import knowledge
             # Do not follow a substituted knowledge directory outside the workspace.
             if (ROOT / 'knowledge').resolve() != ROOT / 'knowledge':
