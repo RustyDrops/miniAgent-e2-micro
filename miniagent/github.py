@@ -182,6 +182,23 @@ class GitHub:
                 raise GitHubError('Pull request response was unexpected. Check branch ' + branch + ' on GitHub.')
             return url
 
+    def draft_release(self, tag_name, name, body):
+        """Create a draft GitHub release with changelog notes."""
+        if not re.fullmatch(r'v[0-9]+(?:\.[0-9]+){1,3}(?:-[A-Za-z0-9.]+)?', tag_name or ''):
+            raise ValueError('Tag name must follow semantic format, e.g. v0.2.0')
+        info = self.request('GET', '')
+        base = info['default_branch']
+        payload = {
+            'tag_name': tag_name,
+            'target_commitish': base,
+            'name': name[:120],
+            'body': body[:10000],
+            'draft': True,
+            'prerelease': False
+        }
+        res = self.request('POST', '/releases', payload)
+        return res.get('html_url', f'https://github.com/{self.repo}/releases')
+
     def _publish_files(self, files, title, digest, digest_label, homepage=False):
         info = self.request('GET', '')
         base = info['default_branch']

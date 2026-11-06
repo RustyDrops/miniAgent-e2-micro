@@ -102,6 +102,14 @@ SCHEMAS = [
            {'week': {'type': 'string'}}, []),
     schema('audit_naive_bayes_router', 'Run a diagnostic audit on the Naive Bayes task router: evaluates accuracy, self-improves weights, prunes noise, and reports token savings.',
            {'hours': {'type': 'integer', 'minimum': 1, 'maximum': 168}}, []),
+    schema('nightly_consolidation', 'Run nightly memory consolidation: SQLite WAL truncation, cache purge, knowledge deduplication, router calibration, and canary checks.',
+           {}, []),
+    schema('generate_morning_briefing', 'Generate an executive morning briefing of overnight task runs, budget status, and system health.',
+           {'hours': {'type': 'integer', 'minimum': 1, 'maximum': 24}}, []),
+    schema('update_status_badges', 'Generate and update SVG status badges (budget, canary pass count, e2-micro health) in site/badges/.',
+           {}, []),
+    schema('draft_weekly_release', 'Compile an autonomous milestone release notes draft and optionally publish to GitHub Releases.',
+           {'tag': {'type': 'string'}}, []),
 ]
 
 
@@ -632,6 +640,36 @@ def _handle_inner(name, args):
             router = NaiveBayesRouter(db_p)
             hours = args.get('hours', 24)
             return json.dumps(router.daily_audit(hours=hours), ensure_ascii=False)
+        if name == 'nightly_consolidation':
+            from .housekeeping import run_nightly_consolidation
+            db_p = os.environ.get('MINIAGENT_DB', 'miniagent.db')
+            return json.dumps(run_nightly_consolidation(db_path=db_p, workspace_root=ROOT), ensure_ascii=False)
+        if name == 'generate_morning_briefing':
+            from decimal import Decimal
+            from .queue import Queue
+            from .budget import Budget
+            from .morning import generate_morning_briefing
+            db_p = os.environ.get('MINIAGENT_DB', 'miniagent.db')
+            q = Queue(db_p)
+            daily_usd = Decimal(os.environ.get('MINIAGENT_DAILY_USD', '0.50'))
+            b = Budget(db_p, daily_usd)
+            hours = args.get('hours', 8)
+            return json.dumps(generate_morning_briefing(q, budget=b, workspace_root=ROOT, hours=hours), ensure_ascii=False)
+        if name == 'update_status_badges':
+            from decimal import Decimal
+            from .budget import Budget
+            from .badges import update_status_badges
+            db_p = os.environ.get('MINIAGENT_DB', 'miniagent.db')
+            daily_usd = Decimal(os.environ.get('MINIAGENT_DAILY_USD', '0.50'))
+            b = Budget(db_p, daily_usd)
+            return json.dumps(update_status_badges(workspace_root=ROOT, budget=b), ensure_ascii=False)
+        if name == 'draft_weekly_release':
+            from .queue import Queue
+            from .release import prepare_milestone_release
+            db_p = os.environ.get('MINIAGENT_DB', 'miniagent.db')
+            q = Queue(db_p)
+            tag = args.get('tag')
+            return json.dumps(prepare_milestone_release(q, workspace_root=ROOT, tag_name=tag), ensure_ascii=False)
         raise ValueError('Unknown tool')
     except Exception as exc:
         return 'Tool failed: ' + type(exc).__name__

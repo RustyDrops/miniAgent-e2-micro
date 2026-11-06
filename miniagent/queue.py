@@ -134,6 +134,23 @@ class Queue:
             db.execute("INSERT INTO settings(key,value) VALUES('journal_seeded','1')")
             db.commit()
 
+    def seed_housekeeping(self):
+        """Install default nightly housekeeping consolidation objective once."""
+        with closing(self.connect()) as db:
+            db.execute('BEGIN IMMEDIATE')
+            if db.execute("SELECT 1 FROM settings WHERE key='housekeeping_seeded'").fetchone():
+                db.commit()
+                return
+            count = db.execute('SELECT COUNT(*) FROM objectives WHERE enabled=1').fetchone()[0]
+            if count < 5:
+                nightly_task = ('Execute nightly consolidation and housekeeping using nightly_consolidation. '
+                                'Perform SQLite WAL truncation, prune router noise, deduplicate knowledge, and verify canary tests.')
+                interval_nightly = 24 * 3600
+                db.execute('INSERT INTO objectives(task,interval_seconds,next_run) VALUES(?,?,?)',
+                           (nightly_task, interval_nightly, int(time.time()) + interval_nightly))
+            db.execute("INSERT INTO settings(key,value) VALUES('housekeeping_seeded','1')")
+            db.commit()
+
     def add_objective(self, task, hours):
         if not task.strip() or len(task.encode('utf-8')) > 3000 or not 6 <= hours <= 720:
             raise ValueError('Use 6–720 hours and a task of at most 3,000 bytes.')

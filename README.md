@@ -5,7 +5,7 @@
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Budget](https://img.shields.io/badge/daily_budget-%240.50--%241.00-green)
 ![Platform](https://img.shields.io/badge/GCP-e2--micro%20Free%20Tier-orange)
-![Tests](https://img.shields.io/badge/tests-94%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-107%20passed-brightgreen)
 
 MiniAgent is a small, highly resource-constrained Python autonomous agent harness designed specifically for Google Cloud's Free Tier **`e2-micro` Linux VM** (1 GB RAM, shared 0.25 vCPU, 30 GB standard disk). It executes sequential specialist roles (Researcher $\rightarrow$ Builder $\rightarrow$ Reviewer), strictly bounds spending to **\$0.50–\$1.00/day**, runs 16+ deterministic zero-cost tools, logs complete execution telemetry, and interacts over a private Telegram chat with opt-in GitHub draft pull requests. Zero third-party Python dependencies—pure standard library & SQLite.
 
@@ -114,6 +114,15 @@ MiniAgent includes built-in capabilities to generate structured daily run logs a
   - `/publish_update PATH SHA256`: Creates a dedicated branch and draft PR for human review.
   - `/publish_update PATH SHA256 direct`: Commits directly to the default branch (`main`) for hands-off autonomous posting.
   - Send `/journal daily` or `/journal weekly` in Telegram to compile logs on demand.
+
+## Autonomous Operation & Edge Intelligence
+
+MiniAgent includes dedicated routines designed for unassisted 24/7 self-healing and pacing:
+* **🌙 Nightly Sleep & Memory Consolidation**: Scheduled daily housekeeping that runs `PRAGMA wal_checkpoint(TRUNCATE)` and `PRAGMA optimize` on SQLite (preventing IOPS exhaustion on GCP standard persistent disks), purges expired tool caches, deduplicates knowledge notes via FTS5, and executes sequential canary verification (`/nightly`).
+* **☕ Morning Executive Briefing**: Telegram summary (`/morning`) reporting overnight job outcomes, today's model ledger utilization, latest curated learning note, and VM resident memory (RSS).
+* **🛡️ Dynamic SVG Status Badges**: Pure-Python SVG shield generator (`/badges`) writing real-time Shields to `site/badges/` without external image or badge services.
+* **🏷️ Autonomous Milestone Release Drafter**: Compiles 7-day progress reports and drafts GitHub releases (`/draft_release [TAG]`) with curated changelogs.
+* **🧭 Adaptive Naive Bayes Task Router**: Pure-Python Laplace-smoothed task router running in 0.15 ms and ~2 MB RAM. Employs Teacher-Student shadow learning from the LLM, confidence gating ($\ge 85\%$), and daily self-calibration to save 15%–25% of the daily token budget (`/router`).
 
 ## Roadmap
 

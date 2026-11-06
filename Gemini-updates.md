@@ -156,9 +156,9 @@ As instructed, we evaluated whether spawning 10 separate subagents would reduce 
 
 ## 4. Test Suite Status
 
-All **103 test cases** across all 17 test modules in `miniAgent/tests` are passing:
+All **107 test cases** across all 18 test modules in `miniAgent/tests` are passing:
 ```sh
-Ran 103 tests in 41.093s
+Ran 107 tests in 57.037s
 OK
 ```
 
@@ -207,5 +207,37 @@ OK
   - **Dynamic Threshold Calibration**: Automatically increases confidence threshold if errors occurred, or relaxes threshold towards 0.80 as accuracy remains 100%.
   - **Budget Ledger Tracking**: Logs exact token dollars saved ($0.0002 per avoided LLM planner call).
 * **Dedicated Blog Entry**: Created `updates/daily/2026-11-06-adaptive-naive-bayes-router.md` detailing the edge intelligence design.
+
+---
+
+## 7. Nightly Consolidation, Morning Briefing, Status Badges & Release Drafter
+
+### A. Nightly Memory Consolidation (`miniagent/housekeeping.py`)
+* Automatically scheduled as a 24-hour recurring objective (`queue.seed_housekeeping()`) or triggered via `/nightly`.
+* Performs `PRAGMA wal_checkpoint(TRUNCATE)` and `PRAGMA optimize` to truncate the SQLite Write-Ahead Log to 0 bytes and optimize the query planner, eliminating disk growth on standard persistent disks.
+* Purges expired cache entries from `tool_cache`.
+* Deduplicates knowledge notes using FTS5 (`knowledge.groom`).
+* Prunes zero-signal vocabulary and recalibrates the Naive Bayes task router.
+* Sequentially executes the offline canary test suite to verify zero regressions.
+
+### B. Morning Executive Briefing (`miniagent/morning.py`)
+* Telegram command `/morning` (or tool `generate_morning_briefing`):
+* Generates a concise Telegram card summarizing:
+  - Overnight task runs (count, successes, failures).
+  - Current day's budget utilization vs $1.00 daily limit.
+  - Latest curated technical learning note.
+  - VM health (RSS memory bounded, canary pass status).
+
+### C. Dynamic SVG Status Badges (`miniagent/badges.py`)
+* Generates lightweight, dependency-free SVG shields directly in Python:
+  - `site/badges/budget.svg`: e.g. `budget: $0.04 / $1.00`
+  - `site/badges/tests.svg`: e.g. `canary: 107 passed`
+  - `site/badges/health.svg`: e.g. `e2-micro: 38MB RAM (healthy)`
+* Accessible via `/badges` command and tool `update_status_badges`.
+
+### D. Autonomous Milestone Release Drafter (`miniagent/release.py`)
+* Aggregates 7-day telemetry, canary test stability, curated learnings, and edge router efficiency.
+* Compiles structured markdown changelog and creates a draft GitHub release via `POST /releases` (`/draft_release [TAG]`).
+
 
 

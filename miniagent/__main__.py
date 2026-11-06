@@ -93,6 +93,7 @@ def telegram_loop(config):
     queue.recover()
     queue.seed_learning()
     queue.seed_journal()
+    queue.seed_housekeeping()
     budget = Budget(config.db_path, config.daily_usd)
     stop_event = threading.Event()
     try:
@@ -198,7 +199,7 @@ def telegram_loop(config):
                     parts = task.split(maxsplit=2)
                     command = parts[0].split('@')[0].lower()
                     if command in ('/start', '/help'):
-                        send('Send a task as a message. Commands: /status, /health, /budget, /jobs, /job ID, /cancel ID, /questions, /answer ID TEXT, /pause, /resume, /schedule HOURS TASK, /objectives, /unschedule ID, /journal [daily|weekly], /router, /preview PATH, /publish PATH SHA256, /publish_update PATH SHA256 [direct], /publish_site SHA256, /preview_bundle DIR, /publish_bundle DIR SHA256. Recurring tasks start after the interval, minimum 6 hours.')
+                        send('Send a task as a message. Commands: /status, /health, /budget, /jobs, /job ID, /cancel ID, /questions, /answer ID TEXT, /pause, /resume, /schedule HOURS TASK, /objectives, /unschedule ID, /journal [daily|weekly], /router, /morning, /nightly, /badges, /draft_release [TAG], /preview PATH, /publish PATH SHA256, /publish_update PATH SHA256 [direct], /publish_site SHA256, /preview_bundle DIR, /publish_bundle DIR SHA256. Recurring tasks start after the interval, minimum 6 hours.')
                     elif command == '/status':
                         spent, limit = budget.today()
                         send(f"{'Paused' if queue.paused() else 'Running'}; jobs: {queue.counts()}; recurring objectives: {len(queue.objectives())}; model ledger today (UTC): ${spent/1e6:.4f} / ${limit/1e6:.2f}.")
@@ -392,6 +393,47 @@ def telegram_loop(config):
                             send('\n'.join(lines))
                         except Exception as exc:
                             send('Could not audit router: ' + type(exc).__name__)
+                    elif command == '/morning':
+                        try:
+                            from .tools import ROOT
+                            from .morning import generate_morning_briefing
+                            briefing = generate_morning_briefing(queue, budget=budget, workspace_root=ROOT)
+                            send(briefing['text'])
+                        except Exception as exc:
+                            send('Could not generate morning briefing: ' + type(exc).__name__)
+                    elif command == '/nightly':
+                        try:
+                            from .tools import ROOT
+                            from .housekeeping import run_nightly_consolidation
+                            rep = run_nightly_consolidation(db_path=config.db_path, workspace_root=ROOT)
+                            lines = [
+                                '🌙 Nightly Consolidation Report:',
+                                f"- SQLite WAL Truncated: {rep['wal_truncated']}",
+                                f"- Expired Cache Purged: {rep['cache_purged']} entries",
+                                f"- Knowledge Groomed: {rep['knowledge_groomed']} notes deduplicated",
+                                f"- Canary Regression Check: {'Passed (100%)' if rep['canary_passed'] else 'Failed'} ({rep['canary_tests_run']} tests run)"
+                            ]
+                            send('\n'.join(lines))
+                        except Exception as exc:
+                            send('Nightly consolidation failed: ' + type(exc).__name__)
+                    elif command == '/badges':
+                        try:
+                            from .tools import ROOT
+                            from .badges import update_status_badges
+                            res = update_status_badges(workspace_root=ROOT, budget=budget)
+                            send(f"Status badges generated in {res['dir']}/\n- Budget: {res['budget_val']}\n- Canary: {res['test_val']}\nBadges: {', '.join(res['badges'])}")
+                        except Exception as exc:
+                            send('Badge generation failed: ' + type(exc).__name__)
+                    elif command == '/draft_release':
+                        try:
+                            from .tools import ROOT
+                            from .release import prepare_milestone_release
+                            tag = parts[1] if len(parts) > 1 else None
+                            res = prepare_milestone_release(queue, workspace_root=ROOT, tag_name=tag)
+                            url_msg = f"\nDraft release created: {res['release_url']}" if res.get('release_url') else "\nDraft notes ready."
+                            send(f"Milestone {res['tag']} prepared ({res['total_jobs']} tasks analyzed).{url_msg}\n\n{res['body'][:800]}...")
+                        except Exception as exc:
+                            send('Milestone drafting failed: ' + type(exc).__name__)
                     else:
                         send('Unknown command. Use /help.')
                     continue

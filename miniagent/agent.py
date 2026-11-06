@@ -25,11 +25,12 @@ READ_TOOLS = {'system_health', 'search_wikipedia', 'search_github', 'search_arxi
               'python_symbol_outline', 'draft_diff', 'extract_markdown_toc', 'check_url_validity',
               'python_import_check', 'draft_stats', 'strip_comments_and_docstrings', 'json_schema_validator',
               'web_search', 'web_fetch', 'inspect_task_history', 'estimate_token_cost', 'ast_linter',
-              'groom_knowledge', 'generate_architecture_diagram', 'audit_naive_bayes_router'}
+              'groom_knowledge', 'generate_architecture_diagram', 'audit_naive_bayes_router',
+              'generate_morning_briefing', 'update_status_badges'}
 ROLE_TOOLS = {
     'researcher': READ_TOOLS | {'remember_learning', 'propose_question'},
-    'builder': READ_TOOLS | {'write_draft', 'modify_draft', 'build_blog', 'test_python_draft', 'propose_question', 'generate_test_scaffold', 'canary_verify', 'generate_daily_journal', 'generate_weekly_recap'},
-    'reviewer': READ_TOOLS | {'test_python_draft', 'propose_followup', 'propose_question', 'canary_verify', 'generate_daily_journal', 'generate_weekly_recap'},
+    'builder': READ_TOOLS | {'write_draft', 'modify_draft', 'build_blog', 'test_python_draft', 'propose_question', 'generate_test_scaffold', 'canary_verify', 'generate_daily_journal', 'generate_weekly_recap', 'nightly_consolidation', 'draft_weekly_release'},
+    'reviewer': READ_TOOLS | {'test_python_draft', 'propose_followup', 'propose_question', 'canary_verify', 'generate_daily_journal', 'generate_weekly_recap', 'nightly_consolidation', 'draft_weekly_release'},
 }
 KNOWN_TOOLS = set().union(*ROLE_TOOLS.values())
 DEFAULT_PLAN = ('researcher', 'builder', 'reviewer')
