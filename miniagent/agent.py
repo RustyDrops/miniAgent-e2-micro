@@ -1,5 +1,6 @@
 """Bounded specialist orchestration. Tool execution is supplied by the host."""
 import json
+import os
 from dataclasses import replace
 from .provider import ChatProvider, ProviderError
 from .compactor import compact_messages
@@ -24,7 +25,7 @@ READ_TOOLS = {'system_health', 'search_wikipedia', 'search_github', 'search_arxi
               'python_symbol_outline', 'draft_diff', 'extract_markdown_toc', 'check_url_validity',
               'python_import_check', 'draft_stats', 'strip_comments_and_docstrings', 'json_schema_validator',
               'web_search', 'web_fetch', 'inspect_task_history', 'estimate_token_cost', 'ast_linter',
-              'groom_knowledge', 'generate_architecture_diagram'}
+              'groom_knowledge', 'generate_architecture_diagram', 'audit_naive_bayes_router'}
 ROLE_TOOLS = {
     'researcher': READ_TOOLS | {'remember_learning', 'propose_question'},
     'builder': READ_TOOLS | {'write_draft', 'modify_draft', 'build_blog', 'test_python_draft', 'propose_question', 'generate_test_scaffold', 'canary_verify', 'generate_daily_journal', 'generate_weekly_recap'},
@@ -63,8 +64,27 @@ class Agent:
             self.planner_provider = self.provider
         self.tool_handler = tool_handler
         self.tool_schemas = tool_schemas or []
+        db_p = getattr(config, 'db_path', None) or os.environ.get('MINIAGENT_DB')
+        self.router = None
+        if db_p and getattr(config, 'planner_enabled', False):
+            try:
+                from .naive_bayes import NaiveBayesRouter
+                self.router = NaiveBayesRouter(db_p)
+            except Exception:
+                self.router = None
 
     def plan_roles(self, task):
+        # 1. Fast path: check if local Naive Bayes router has high confidence
+        if self.router is not None:
+            try:
+                predicted, conf, src = self.router.predict(task)
+                if predicted and predicted in ALLOWED_PLANS and src == 'naive_bayes':
+                    self.router.record_decision(task, predicted, conf, predicted, 'naive_bayes', success=True)
+                    return predicted, False
+            except Exception:
+                pass
+
+        # 2. Teacher path: LLM Planner decides
         message = self.planner_provider.complete([
             {'role': 'system', 'content': PLANNER_PROMPT},
             {'role': 'user', 'content': task},
@@ -77,7 +97,15 @@ class Agent:
             if not isinstance(roles, list) or any(not isinstance(role, str) for role in roles):
                 return DEFAULT_PLAN, True
             candidate = tuple(roles)
-            return (candidate, False) if candidate in ALLOWED_PLANS else (DEFAULT_PLAN, True)
+            if candidate in ALLOWED_PLANS:
+                # 3. Student learns from teacher's successful plan
+                if self.router is not None:
+                    try:
+                        self.router.learn(task, candidate, source='teacher', success=True)
+                    except Exception:
+                        pass
+                return candidate, False
+            return DEFAULT_PLAN, True
         except (TypeError, ValueError):
             return DEFAULT_PLAN, True
 

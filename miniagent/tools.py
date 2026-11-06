@@ -100,6 +100,8 @@ SCHEMAS = [
            {'date': {'type': 'string'}}, []),
     schema('generate_weekly_recap', 'Compile an autonomous weekly recap rollup of progress, budget pacing vs $7 limit, and learnings to updates/weekly/YYYY-Www.md.',
            {'week': {'type': 'string'}}, []),
+    schema('audit_naive_bayes_router', 'Run a diagnostic audit on the Naive Bayes task router: evaluates accuracy, self-improves weights, prunes noise, and reports token savings.',
+           {'hours': {'type': 'integer', 'minimum': 1, 'maximum': 168}}, []),
 ]
 
 
@@ -624,6 +626,12 @@ def _handle_inner(name, args):
             daily_usd = Decimal(os.environ.get('MINIAGENT_DAILY_USD', '0.50'))
             b = Budget(db_p, daily_usd)
             return json.dumps(generate_weekly_recap(q, ROOT, week_str=args.get('week'), budget=b), ensure_ascii=False)
+        if name == 'audit_naive_bayes_router':
+            from .naive_bayes import NaiveBayesRouter
+            db_p = os.environ.get('MINIAGENT_DB', 'miniagent.db')
+            router = NaiveBayesRouter(db_p)
+            hours = args.get('hours', 24)
+            return json.dumps(router.daily_audit(hours=hours), ensure_ascii=False)
         raise ValueError('Unknown tool')
     except Exception as exc:
         return 'Tool failed: ' + type(exc).__name__

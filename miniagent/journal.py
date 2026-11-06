@@ -110,6 +110,29 @@ def generate_daily_journal(queue, workspace_root=None, date_str=None, budget=Non
     else:
         lines.append('- *No new learning notes recorded during this period.*')
 
+    # Query Naive Bayes Router daily audit
+    router_info = None
+    try:
+        from .naive_bayes import NaiveBayesRouter
+        db_p = getattr(queue, 'path', os.environ.get('MINIAGENT_DB', 'miniagent.db'))
+        router = NaiveBayesRouter(db_p)
+        router_info = router.daily_audit(hours=24)
+    except Exception:
+        router_info = None
+
+    if router_info and router_info.get('total_routed', 0) > 0:
+        lines.extend([
+            '',
+            '## 🧭 Adaptive Task Router (Naive Bayes) Audit',
+            f"- **Total Routing Decisions**: {router_info['total_routed']}",
+            f"  - Locally Routed (Naive Bayes): {router_info['naive_bayes_routed']}",
+            f"  - Teacher LLM Fallbacks: {router_info['teacher_llm_routed']}",
+            f"- **Local Accuracy**: {router_info['naive_bayes_accuracy_pct']}%",
+            f"- **Model Budget Saved**: \\${router_info['cost_saved_usd']:.4f}",
+            f"- **Active Vocabulary Size**: {router_info['active_vocab_size']} tokens ({router_info['pruned_words']} pruned)",
+            f"- **Calibrated Confidence Threshold**: {router_info['confidence_threshold']:.2f}"
+        ])
+
     lines.extend([
         '',
         '## 🛠️ System Health & Infrastructure',

@@ -198,7 +198,7 @@ def telegram_loop(config):
                     parts = task.split(maxsplit=2)
                     command = parts[0].split('@')[0].lower()
                     if command in ('/start', '/help'):
-                        send('Send a task as a message. Commands: /status, /health, /budget, /jobs, /job ID, /cancel ID, /questions, /answer ID TEXT, /pause, /resume, /schedule HOURS TASK, /objectives, /unschedule ID, /journal [daily|weekly], /preview PATH, /publish PATH SHA256, /publish_update PATH SHA256 [direct], /publish_site SHA256, /preview_bundle DIR, /publish_bundle DIR SHA256. Recurring tasks start after the interval, minimum 6 hours.')
+                        send('Send a task as a message. Commands: /status, /health, /budget, /jobs, /job ID, /cancel ID, /questions, /answer ID TEXT, /pause, /resume, /schedule HOURS TASK, /objectives, /unschedule ID, /journal [daily|weekly], /router, /preview PATH, /publish PATH SHA256, /publish_update PATH SHA256 [direct], /publish_site SHA256, /preview_bundle DIR, /publish_bundle DIR SHA256. Recurring tasks start after the interval, minimum 6 hours.')
                     elif command == '/status':
                         spent, limit = budget.today()
                         send(f"{'Paused' if queue.paused() else 'Running'}; jobs: {queue.counts()}; recurring objectives: {len(queue.objectives())}; model ledger today (UTC): ${spent/1e6:.4f} / ${limit/1e6:.2f}.")
@@ -375,6 +375,23 @@ def telegram_loop(config):
                             send(('Direct update committed: ' if direct else 'Draft update pull request created: ') + url)
                         except (IndexError, ValueError, OSError, UnicodeError, GitHubError) as exc:
                             send('Publish failed: ' + (str(exc)[:400] if isinstance(exc, (ValueError, GitHubError)) else 'Check path and configuration.'))
+                    elif command == '/router':
+                        try:
+                            from .naive_bayes import NaiveBayesRouter
+                            router = NaiveBayesRouter(config.db_path)
+                            audit = router.daily_audit(hours=24)
+                            lines = [
+                                '🧭 Naive Bayes Task Router Audit (24h):',
+                                f"- Local Decisions: {audit['naive_bayes_routed']} / {audit['total_routed']} ({audit['naive_bayes_accuracy_pct']}% accuracy)",
+                                f"- Teacher LLM Fallbacks: {audit['teacher_llm_routed']}",
+                                f"- Estimated Budget Saved: ${audit['cost_saved_usd']:.4f}",
+                                f"- Active Vocabulary: {audit['active_vocab_size']} words ({audit['pruned_words']} pruned)",
+                                f"- Calibrated Confidence Threshold: {audit['confidence_threshold']:.2f}",
+                                f"- Plan Distribution: {json.dumps(audit['plans_distribution'])}"
+                            ]
+                            send('\n'.join(lines))
+                        except Exception as exc:
+                            send('Could not audit router: ' + type(exc).__name__)
                     else:
                         send('Unknown command. Use /help.')
                     continue
