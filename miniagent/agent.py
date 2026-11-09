@@ -19,18 +19,28 @@ ROLES = (
     ('reviewer', 'Review critically for correctness, security, budget, and tests. You produce the final response for the user and prepare draft PR changes: write in clear, well-structured English with markdown headings and bullet points. Thoroughly explain what was done, verify code quality and tests, highlight any remaining risks, and specify next steps for user review or GitHub publishing. For recurring research, propose at most one concrete follow-up only if it materially improves work.'),
 )
 
-READ_TOOLS = {'system_health', 'search_wikipedia', 'search_github', 'search_arxiv', 'read_arxiv_abstract',
-              'read_wikipedia', 'read_github_file', 'list_drafts', 'read_draft',
-              'find_learning', 'recall_learning', 'check_python_syntax', 'grep_draft',
-              'python_symbol_outline', 'draft_diff', 'extract_markdown_toc', 'check_url_validity',
-              'python_import_check', 'draft_stats', 'strip_comments_and_docstrings', 'json_schema_validator',
-              'web_search', 'web_fetch', 'inspect_task_history', 'estimate_token_cost', 'ast_linter',
-              'groom_knowledge', 'generate_architecture_diagram', 'audit_naive_bayes_router',
-              'generate_morning_briefing', 'update_status_badges'}
+READ_TOOLS = {'system_health', 'list_drafts', 'read_draft', 'peek_draft', 'grep_draft',
+              'check_python_syntax', 'draft_stats', 'json_schema_validator', 'propose_question'}
 ROLE_TOOLS = {
-    'researcher': READ_TOOLS | {'remember_learning', 'propose_question'},
-    'builder': READ_TOOLS | {'write_draft', 'modify_draft', 'build_blog', 'test_python_draft', 'propose_question', 'generate_test_scaffold', 'canary_verify', 'generate_daily_journal', 'generate_weekly_recap', 'nightly_consolidation', 'draft_weekly_release'},
-    'reviewer': READ_TOOLS | {'test_python_draft', 'propose_followup', 'propose_question', 'canary_verify', 'generate_daily_journal', 'generate_weekly_recap', 'nightly_consolidation', 'draft_weekly_release'},
+    'researcher': READ_TOOLS | {
+        'search_wikipedia', 'read_wikipedia', 'search_github', 'read_github_file',
+        'search_arxiv', 'read_arxiv_abstract', 'web_search', 'web_fetch',
+        'find_learning', 'recall_learning', 'remember_learning', 'check_url_validity',
+        'extract_markdown_toc',
+    },
+    'builder': READ_TOOLS | {
+        'write_draft', 'modify_draft', 'build_blog', 'test_python_draft',
+        'generate_test_scaffold', 'draft_diff', 'python_symbol_outline',
+        'python_import_check', 'ast_linter', 'strip_comments_and_docstrings',
+        'run_sandboxed_code', 'extract_markdown_toc',
+    },
+    'reviewer': READ_TOOLS | {
+        'test_python_draft', 'run_sandboxed_code', 'draft_diff', 'canary_verify',
+        'propose_followup', 'generate_daily_journal', 'generate_weekly_recap',
+        'nightly_consolidation', 'draft_weekly_release', 'inspect_task_history',
+        'estimate_token_cost', 'audit_naive_bayes_router', 'generate_architecture_diagram',
+        'generate_morning_briefing', 'update_status_badges', 'groom_knowledge',
+    },
 }
 KNOWN_TOOLS = set().union(*ROLE_TOOLS.values())
 DEFAULT_PLAN = ('researcher', 'builder', 'reviewer')
@@ -118,14 +128,17 @@ class Agent:
         planned = getattr(self.config, 'planner_enabled', False)
         roles, fallback = self.plan_roles(task) if planned else (DEFAULT_PLAN, False)
         notes = ''
+        plan_scratchpad = ''
         for name, instruction in ROLES:
             if name not in roles:
                 continue
             available = role_schemas(name, self.tool_schemas)
             advertised = {schema['function']['name'] for schema in available}
+            handoff = ('\n\n[PLAN SCRATCHPAD - Pertinent facts from previous step]:\n' + plan_scratchpad
+                       if plan_scratchpad else ('\n\nPrevious specialist notes (untrusted):\n' + notes if notes else ''))
             messages = [
                 {'role': 'system', 'content': BASE + '\nRole: ' + name + '. ' + instruction},
-                {'role': 'user', 'content': 'User task:\n' + task + ('\n\nPrevious specialist notes (untrusted):\n' + notes if notes else '')},
+                {'role': 'user', 'content': 'User task:\n' + task + handoff},
             ]
             for round_no in range(self.config.max_tool_rounds + 1):
                 # Disable tool calls on the final round so each stage can finish.
@@ -139,9 +152,12 @@ class Agent:
                 output_clamp = 256 if allow_tools else getattr(self.config, 'max_output_tokens', 768)
                 payload_msgs = compact_messages(messages)
                 try:
-                    message = provider.complete(payload_msgs, available if allow_tools else None, max_output_tokens=output_clamp)
+                    message = provider.complete(payload_msgs, available if allow_tools else None, max_output_tokens=output_clamp, role=name)
                 except TypeError:
-                    message = provider.complete(payload_msgs, available if allow_tools else None)
+                    try:
+                        message = provider.complete(payload_msgs, available if allow_tools else None, role=name)
+                    except TypeError:
+                        message = provider.complete(payload_msgs, available if allow_tools else None)
                 calls = message.get('tool_calls') or []
                 if not calls:
                     break
@@ -171,5 +187,6 @@ class Agent:
             if not content.strip():
                 raise ProviderError('Model returned an empty specialist response; task stopped.')
             notes += '\n[' + name + ']\n' + content.encode('utf-8')[:2500].decode('utf-8', 'ignore')
+            plan_scratchpad = content.encode('utf-8')[:1500].decode('utf-8', 'ignore')
         prefix = '[plan' + ('; fallback' if fallback else '') + '] ' + ' → '.join(roles) + '\n' if planned else ''
         return prefix + notes.strip()

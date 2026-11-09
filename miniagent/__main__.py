@@ -221,6 +221,11 @@ def telegram_loop(config):
                                          f"{row['unsettled_requests']} unsettled reservations.")
                         if truncated:
                             lines.append('Additional model groups omitted; total includes all groups.')
+                        roles_usage = budget.usage_by_role()
+                        if roles_usage:
+                            lines.append('\nSpecialist Breakdown:')
+                            for r in roles_usage:
+                                lines.append(f"• {r['role']}: ${r['committed_microdollars']/1e6:.6f} ({r['requests']} calls, {r['input_tokens']} in / {r['output_tokens']} out)")
                         send('\n'.join(lines))
                     elif command == '/jobs':
                         jobs = queue.recent_jobs()

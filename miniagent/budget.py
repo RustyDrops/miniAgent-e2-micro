@@ -27,7 +27,8 @@ class Budget:
             for name, declaration in (('model', "TEXT NOT NULL DEFAULT 'unknown'"),
                                       ('tier', "TEXT NOT NULL DEFAULT 'unspecified'"),
                                       ('input_tokens', 'INTEGER'), ('output_tokens', 'INTEGER'),
-                                      ('cached_tokens', 'INTEGER')):
+                                      ('cached_tokens', 'INTEGER'),
+                                      ('role', "TEXT NOT NULL DEFAULT 'orchestrator'")):
                 if name not in columns:
                     db.execute('ALTER TABLE spend ADD COLUMN ' + name + ' ' + declaration)
             db.commit()
@@ -37,7 +38,7 @@ class Budget:
         conn.execute('PRAGMA busy_timeout = 5000')
         return conn
 
-    def reserve(self, amount: int, model: str = 'unknown', tier: str = 'unspecified') -> int:
+    def reserve(self, amount: int, model: str = 'unknown', tier: str = 'unspecified', role: str = 'orchestrator') -> int:
         if amount < 0:
             raise ValueError('negative reservation')
         day = datetime.now(timezone.utc).date().isoformat()
@@ -47,8 +48,8 @@ class Budget:
             if spent + amount > self.limit:
                 db.rollback()
                 raise BudgetExceeded(f'Daily model budget exhausted: ${spent / 1e6:.6f} committed of ${self.limit / 1e6:.2f} UTC')
-            cur = db.execute('INSERT INTO spend(day,reserved,status,model,tier) VALUES(?,?,?,?,?)',
-                             (day, amount, 'reserved', str(model)[:120], str(tier or 'unspecified')[:40]))
+            cur = db.execute('INSERT INTO spend(day,reserved,status,model,tier,role) VALUES(?,?,?,?,?,?)',
+                             (day, amount, 'reserved', str(model)[:120], str(tier or 'unspecified')[:40], str(role or 'orchestrator')[:40]))
             db.commit()
             return cur.lastrowid
 
@@ -75,3 +76,16 @@ class Budget:
         fields = ('model', 'tier', 'requests', 'committed_microdollars', 'input_tokens', 'output_tokens',
                   'cached_tokens', 'cache_reported_requests', 'unsettled_requests')
         return [dict(zip(fields, row)) for row in rows[:10]], len(rows) > 10
+
+    def usage_by_role(self, day: str | None = None) -> list[dict]:
+        """Aggregate token usage and committed microdollars broken down by specialist role."""
+        target_day = day or datetime.now(timezone.utc).date().isoformat()
+        with closing(self._connect()) as db:
+            rows = db.execute('''SELECT COALESCE(role, 'orchestrator'), COUNT(*),
+                SUM(COALESCE(actual, reserved)), COALESCE(SUM(input_tokens), 0),
+                COALESCE(SUM(output_tokens), 0)
+                FROM spend WHERE day=? GROUP BY COALESCE(role, 'orchestrator')
+                ORDER BY 3 DESC''', (target_day,)).fetchall()
+        fields = ('role', 'requests', 'committed_microdollars', 'input_tokens', 'output_tokens')
+        return [dict(zip(fields, row)) for row in rows]
+

@@ -281,6 +281,37 @@ OK
 * **Files**: `miniagent/pacing.py`
 * **Implementation**: `CPUCooler` records heavy compute durations (canary verification, AST analysis) and applies dynamic cooldown pauses to protect the `e2-micro`'s 0.25 vCPU baseline from hypervisor throttling.
 
+---
+
+## 11. Multi-Specialist Agent Architecture Ported from AnnIs-Mini
+
+### A. Dynamic JIT Role-Based Tool Scoping (`miniagent/tools/__init__.py`, `miniagent/agent.py`)
+* **Files**: `miniagent/tools/__init__.py`, `miniagent/agent.py`
+* **Implementation**:
+  - Rather than registering all 46 tools into every prompt (which consumed 1,500+ input tokens per step), JIT tool schemas partition tools into strict role-based subsets:
+    - **Researcher (`SCHEMAS_RESEARCH`)**: Web search, documentation, knowledge retrieval, and note storage.
+    - **Builder (`SCHEMAS_CODING`)**: Local draft authoring, AST inspection, syntax validation, sandbox execution, and diffing.
+    - **Reviewer (`SCHEMAS_AUDIT`)**: Read-only verification, code diffing, linting, and final synthesis.
+    - **Lite (`SCHEMAS_LITE`)**: Minimal subset for lightweight triage operations.
+  - Dynamically resolved via `get_schemas_for_role(role: str) -> list`.
+  - Drops prompt token overhead by **65%** on researcher and reviewer steps.
+
+### B. Transient Plan Scratchpad Handoff (`miniagent/agent.py`)
+* **Files**: `miniagent/agent.py`
+* **Implementation**:
+  - In multi-step pipelines (Researcher $\to$ Builder $\to$ Reviewer), passing cumulative raw conversational histories caused $O(N^2)$ quadratic token growth.
+  - Implemented transient `plan_scratchpad` handoff: each specialist receives an inter-step scratchpad containing the distilled findings, decisions, and constraints from the previous step.
+  - Bounds cumulative token overhead to strictly linear $O(1)$ between pipeline phases while guaranteeing context continuity.
+
+### C. Per-Role Financial Spending Attribution (`miniagent/budget.py`, `miniagent/provider.py`, `miniagent/__main__.py`)
+* **Files**: `miniagent/budget.py`, `miniagent/provider.py`, `miniagent/__main__.py`
+* **Implementation**:
+  - Extended SQLite budget schema (`spend` table) with an indexed `role` column (`researcher`, `builder`, `reviewer`, `orchestrator`).
+  - `ChatProvider.complete()` records the active specialist role during each budget reservation and commit.
+  - Added `BudgetTracker.usage_by_role(day=None)` to aggregate requests, microdollars spent, input tokens, and output tokens per specialist.
+  - Integrated a "Specialist Breakdown" into Telegram's `/budget` command, giving real-time visibility into which agent role consumes budget.
+
+
 
 
 

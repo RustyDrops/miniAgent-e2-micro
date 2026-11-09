@@ -39,7 +39,7 @@ class ChatProvider:
         self.config = config
         self.budget = budget or Budget(config.db_path, config.daily_usd)
 
-    def complete(self, messages, tools=None, max_output_tokens=None):
+    def complete(self, messages, tools=None, max_output_tokens=None, role='orchestrator'):
         cfg = self.config
         output_limit = max_output_tokens or cfg.max_output_tokens
         payload = {'model': cfg.model, 'messages': messages, 'max_completion_tokens': output_limit}
@@ -63,7 +63,7 @@ class ChatProvider:
         request = urllib.request.Request(cfg.base_url + '/chat/completions', data=raw,
             headers={'Authorization': 'Bearer ' + cfg.api_key, 'Content-Type': 'application/json'}, method='POST')
         for attempt in range(getattr(cfg, 'max_retries', 1) + 1):
-            reservation = self.budget.reserve(estimated, model=cfg.model, tier=cfg.service_tier)
+            reservation = self.budget.reserve(estimated, model=cfg.model, tier=cfg.service_tier, role=role)
             try:
                 with urllib.request.build_opener(_NoRedirect()).open(request, timeout=cfg.timeout_seconds) as response:
                     data = response.read(2_000_001)

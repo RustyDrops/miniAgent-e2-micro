@@ -118,6 +118,53 @@ SCHEMAS = [
            {'path': {'type': 'string'}, 'start_line': {'type': 'integer', 'minimum': 1}, 'end_line': {'type': 'integer', 'minimum': 1}}, ['path']),
 ]
 
+SCHEMAS_BY_NAME = {s['function']['name']: s for s in SCHEMAS}
+
+LITE_NAMES = {'system_health', 'peek_draft', 'inspect_task_history', 'propose_question', 'propose_followup', 'run_sandboxed_code'}
+RESEARCH_NAMES = {
+    'system_health', 'list_drafts', 'read_draft', 'peek_draft', 'grep_draft',
+    'search_wikipedia', 'read_wikipedia', 'search_github', 'read_github_file',
+    'search_arxiv', 'read_arxiv_abstract', 'web_search', 'web_fetch',
+    'find_learning', 'recall_learning', 'remember_learning', 'check_url_validity',
+    'extract_markdown_toc', 'propose_question', 'draft_stats'
+}
+CODING_NAMES = {
+    'system_health', 'list_drafts', 'read_draft', 'write_draft', 'modify_draft',
+    'peek_draft', 'grep_draft', 'draft_diff', 'draft_stats', 'check_python_syntax',
+    'python_symbol_outline', 'python_import_check', 'ast_linter', 'strip_comments_and_docstrings',
+    'generate_test_scaffold', 'run_sandboxed_code', 'test_python_draft', 'build_blog',
+    'extract_markdown_toc', 'json_schema_validator', 'propose_question'
+}
+AUDIT_NAMES = {
+    'system_health', 'list_drafts', 'read_draft', 'peek_draft', 'draft_diff',
+    'draft_stats', 'test_python_draft', 'run_sandboxed_code', 'canary_verify',
+    'inspect_task_history', 'estimate_token_cost', 'propose_followup',
+    'audit_naive_bayes_router', 'generate_architecture_diagram', 'nightly_consolidation',
+    'generate_morning_briefing', 'update_status_badges', 'draft_weekly_release',
+    'generate_daily_journal', 'generate_weekly_recap', 'groom_knowledge',
+    'json_schema_validator', 'propose_question'
+}
+
+SCHEMAS_LITE = [SCHEMAS_BY_NAME[n] for n in LITE_NAMES if n in SCHEMAS_BY_NAME]
+SCHEMAS_RESEARCH = [SCHEMAS_BY_NAME[n] for n in RESEARCH_NAMES if n in SCHEMAS_BY_NAME]
+SCHEMAS_CODING = [SCHEMAS_BY_NAME[n] for n in CODING_NAMES if n in SCHEMAS_BY_NAME]
+SCHEMAS_AUDIT = [SCHEMAS_BY_NAME[n] for n in AUDIT_NAMES if n in SCHEMAS_BY_NAME]
+
+
+def get_schemas_for_role(role: str) -> list:
+    """Dynamically return the scoped JIT tool schemas for a specialist role."""
+    r = (role or '').lower()
+    if r in ('researcher', 'research'):
+        return SCHEMAS_RESEARCH
+    if r in ('builder', 'coding', 'coder'):
+        return SCHEMAS_CODING
+    if r in ('reviewer', 'audit', 'auditor'):
+        return SCHEMAS_AUDIT
+    if r in ('lite', 'orchestrator'):
+        return SCHEMAS_LITE
+    return SCHEMAS
+
+
 
 def safe_path(name):
     if not isinstance(name, str) or not name or len(name) > 200:
