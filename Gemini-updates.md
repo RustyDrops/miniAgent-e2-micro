@@ -239,5 +239,23 @@ OK
 * Aggregates 7-day telemetry, canary test stability, curated learnings, and edge router efficiency.
 * Compiles structured markdown changelog and creates a draft GitHub release via `POST /releases` (`/draft_release [TAG]`).
 
+---
+
+## 9. Ephemeral Cloud Run Sandbox Execution & Embedded WAL Memory Layer
+
+### A. Cloud Run Ephemeral Sandbox (`miniagent/tools/sandbox.py`, `sandbox_service/`)
+* **Offloaded Execution**: Offloads arbitrary code execution out-of-process over HTTP to a scalable Cloud Run container (`sandbox_service/`), safeguarding the 1 GB `e2-micro` host from Out-Of-Memory (OOM) crashes.
+* **GCP Metadata Server Auth**: Utilizes `google.auth` and `google.auth.transport.requests.Request` to generate OIDC identity tokens authorizing requests to `--no-allow-unauthenticated` Cloud Run endpoints.
+* **Standardized Schema**: Standardized dictionary return `{"stdout": str, "stderr": str, "exit_code": int}` with graceful handling of `RequestException` and timeouts (exit code 124).
+* **Container Packaging**: Includes standalone FastAPI service in `sandbox_service/main.py` and production `sandbox_service/Dockerfile` based on `python:3.11-slim`.
+
+### B. Persistent State Layer (`miniagent/memory/db.py`)
+* **SQLite WAL Mode**: Configures WAL journal mode (`PRAGMA journal_mode = WAL;`), concurrency timeout (`PRAGMA busy_timeout = 5000;`), and reduced fsyncs (`PRAGMA synchronous = NORMAL;`).
+* **Table `agent_memory`**: Schema storing `id`, `session_id`, `prompt`, `execution_summary`, `artifacts`, and `created_at` with indexed `session_id`.
+* **Helper API**:
+  - `init_memory_db() -> None`
+  - `log_task(session_id, prompt, summary, artifacts) -> int`
+  - `fetch_session_history(session_id, limit=10) -> List[sqlite3.Row]`
+
 
 

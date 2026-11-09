@@ -8,6 +8,8 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from miniagent.tools.sandbox import run_sandboxed_code
+
 
 WRAPPER = '''import resource, runpy, sys
 for key, value in ((resource.RLIMIT_CPU, 5), (resource.RLIMIT_AS, 268435456),

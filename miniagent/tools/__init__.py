@@ -13,6 +13,8 @@ import tokenize
 from pathlib import Path
 from urllib.parse import urlencode, quote
 from urllib.request import Request, HTTPRedirectHandler, build_opener
+from miniagent.tools.sandbox import run_sandboxed_code
+
 
 ROOT = Path(os.environ.get('MINIAGENT_WORKSPACE', '/var/lib/miniagent/workspace')).resolve()
 MAX_FILE = 20000
@@ -110,6 +112,8 @@ SCHEMAS = [
            {}, []),
     schema('draft_weekly_release', 'Compile an autonomous milestone release notes draft and optionally publish to GitHub Releases.',
            {'tag': {'type': 'string'}}, []),
+    schema('run_sandboxed_code', 'Execute python code inside an ephemeral Cloud Run sandbox container.',
+           {'code': {'type': 'string'}, 'runtime': {'type': 'string'}, 'timeout': {'type': 'integer'}}, ['code']),
 ]
 
 
@@ -398,7 +402,7 @@ def tiny_fetch(url, offset=0):
 def inspect_task_history(limit=5, failed_only=False):
     db_path = os.environ.get('MINIAGENT_DB', 'miniagent.db')
     try:
-        from .queue import Queue
+        from miniagent.queue import Queue
         q = Queue(db_path)
         history = q.get_history(limit=min(max(1, limit), 20), failed_only=bool(failed_only))
         return [{
@@ -446,10 +450,10 @@ def ast_linter(path):
 def _handle_inner(name, args):
     try:
         if name == 'system_health':
-            from .health import collect
+            from miniagent.health import collect
             return json.dumps(collect(ROOT))
         if name in ('search_arxiv', 'read_arxiv_abstract'):
-            from . import research
+            from miniagent import research
             result = research.search(args['query']) if name == 'search_arxiv' else research.abstract(args['id'], args.get('offset', 0))
             return json.dumps(result, ensure_ascii=False)
         if name in ('search_wikipedia', 'search_github'):
@@ -467,7 +471,7 @@ def _handle_inner(name, args):
         if name == 'read_github_file':
             return json.dumps(read_github_file(args['repository'], args['path'], args.get('offset', 0)), ensure_ascii=False)
         if name == 'test_python_draft':
-            from .sandbox import run_python_tests
+            from miniagent.sandbox import run_python_tests
             try:
                 return json.dumps(run_python_tests(safe_path(args['source_path']), safe_path(args['test_path'])), ensure_ascii=False)
             except RuntimeError as exc:
@@ -477,7 +481,7 @@ def _handle_inner(name, args):
                 ROOT.mkdir(parents=True, exist_ok=True)
             except OSError:
                 pass
-            from . import knowledge
+            from miniagent import knowledge
             # Do not follow a substituted knowledge directory outside the workspace.
             if (ROOT / 'knowledge').resolve() != ROOT / 'knowledge':
                 raise ValueError('Invalid knowledge directory')
@@ -488,7 +492,7 @@ def _handle_inner(name, args):
                 return json.dumps(knowledge.search(ROOT, args['query']), ensure_ascii=False)
             return json.dumps(knowledge.recall(ROOT, args['id']), ensure_ascii=False)
         if name == 'build_blog':
-            from .blog import build_page
+            from miniagent.blog import build_page
             paths = args['paths']
             if not isinstance(paths, list) or not 1 <= len(paths) <= 8:
                 raise ValueError('Provide one to eight drafts')
@@ -593,22 +597,22 @@ def _handle_inner(name, args):
         if name == 'ast_linter':
             return json.dumps(ast_linter(args['path']), ensure_ascii=False)
         if name == 'generate_test_scaffold':
-            from .test_generator import generate_test_scaffold
+            from miniagent.test_generator import generate_test_scaffold
             target = safe_path(args['path'])
             code = target.read_text(encoding='utf-8')
             mod_name = args.get('module_name', target.stem)
             return generate_test_scaffold(code, mod_name)
         if name == 'canary_verify':
-            from .canary import run_canary_tests
+            from miniagent.canary import run_canary_tests
             return json.dumps(run_canary_tests(), ensure_ascii=False)
         if name == 'groom_knowledge':
-            from . import knowledge
+            from miniagent import knowledge
             return json.dumps(knowledge.groom(ROOT), ensure_ascii=False)
         if name == 'generate_architecture_diagram':
             from decimal import Decimal
-            from .diagram import generate_mermaid_diagram
-            from .queue import Queue
-            from .budget import Budget
+            from miniagent.diagram import generate_mermaid_diagram
+            from miniagent.queue import Queue
+            from miniagent.budget import Budget
             db_p = os.environ.get('MINIAGENT_DB', 'miniagent.db')
             q = Queue(db_p)
             daily_usd = Decimal(os.environ.get('MINIAGENT_DAILY_USD', '0.50'))
@@ -616,9 +620,9 @@ def _handle_inner(name, args):
             return generate_mermaid_diagram(q, b)
         if name == 'generate_daily_journal':
             from decimal import Decimal
-            from .queue import Queue
-            from .budget import Budget
-            from .journal import generate_daily_journal
+            from miniagent.queue import Queue
+            from miniagent.budget import Budget
+            from miniagent.journal import generate_daily_journal
             db_p = os.environ.get('MINIAGENT_DB', 'miniagent.db')
             q = Queue(db_p)
             daily_usd = Decimal(os.environ.get('MINIAGENT_DAILY_USD', '0.50'))
@@ -626,29 +630,29 @@ def _handle_inner(name, args):
             return json.dumps(generate_daily_journal(q, ROOT, date_str=args.get('date'), budget=b), ensure_ascii=False)
         if name == 'generate_weekly_recap':
             from decimal import Decimal
-            from .queue import Queue
-            from .budget import Budget
-            from .journal import generate_weekly_recap
+            from miniagent.queue import Queue
+            from miniagent.budget import Budget
+            from miniagent.journal import generate_weekly_recap
             db_p = os.environ.get('MINIAGENT_DB', 'miniagent.db')
             q = Queue(db_p)
             daily_usd = Decimal(os.environ.get('MINIAGENT_DAILY_USD', '0.50'))
             b = Budget(db_p, daily_usd)
             return json.dumps(generate_weekly_recap(q, ROOT, week_str=args.get('week'), budget=b), ensure_ascii=False)
         if name == 'audit_naive_bayes_router':
-            from .naive_bayes import NaiveBayesRouter
+            from miniagent.naive_bayes import NaiveBayesRouter
             db_p = os.environ.get('MINIAGENT_DB', 'miniagent.db')
             router = NaiveBayesRouter(db_p)
             hours = args.get('hours', 24)
             return json.dumps(router.daily_audit(hours=hours), ensure_ascii=False)
         if name == 'nightly_consolidation':
-            from .housekeeping import run_nightly_consolidation
+            from miniagent.housekeeping import run_nightly_consolidation
             db_p = os.environ.get('MINIAGENT_DB', 'miniagent.db')
             return json.dumps(run_nightly_consolidation(db_path=db_p, workspace_root=ROOT), ensure_ascii=False)
         if name == 'generate_morning_briefing':
             from decimal import Decimal
-            from .queue import Queue
-            from .budget import Budget
-            from .morning import generate_morning_briefing
+            from miniagent.queue import Queue
+            from miniagent.budget import Budget
+            from miniagent.morning import generate_morning_briefing
             db_p = os.environ.get('MINIAGENT_DB', 'miniagent.db')
             q = Queue(db_p)
             daily_usd = Decimal(os.environ.get('MINIAGENT_DAILY_USD', '0.50'))
@@ -657,19 +661,25 @@ def _handle_inner(name, args):
             return json.dumps(generate_morning_briefing(q, budget=b, workspace_root=ROOT, hours=hours), ensure_ascii=False)
         if name == 'update_status_badges':
             from decimal import Decimal
-            from .budget import Budget
-            from .badges import update_status_badges
+            from miniagent.budget import Budget
+            from miniagent.badges import update_status_badges
             db_p = os.environ.get('MINIAGENT_DB', 'miniagent.db')
             daily_usd = Decimal(os.environ.get('MINIAGENT_DAILY_USD', '0.50'))
             b = Budget(db_p, daily_usd)
             return json.dumps(update_status_badges(workspace_root=ROOT, budget=b), ensure_ascii=False)
         if name == 'draft_weekly_release':
-            from .queue import Queue
-            from .release import prepare_milestone_release
+            from miniagent.queue import Queue
+            from miniagent.release import prepare_milestone_release
             db_p = os.environ.get('MINIAGENT_DB', 'miniagent.db')
             q = Queue(db_p)
             tag = args.get('tag')
             return json.dumps(prepare_milestone_release(q, workspace_root=ROOT, tag_name=tag), ensure_ascii=False)
+        if name == 'run_sandboxed_code':
+            from miniagent.tools.sandbox import run_sandboxed_code
+            code = str(args.get('code', ''))
+            runtime = str(args.get('runtime', 'python3'))
+            timeout = int(args.get('timeout', 30))
+            return json.dumps(run_sandboxed_code(code, runtime=runtime, timeout=timeout), ensure_ascii=False)
         raise ValueError('Unknown tool')
     except Exception as exc:
         return 'Tool failed: ' + type(exc).__name__
@@ -682,7 +692,7 @@ def handle(name, args):
     target_sha = ''
     if cache_eligible:
         try:
-            from .cache import ToolCache
+            from miniagent.cache import ToolCache
             db_p = os.environ.get('MINIAGENT_DB', 'miniagent.db')
             cache = ToolCache(db_p)
             if 'path' in args:
