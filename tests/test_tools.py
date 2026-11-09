@@ -270,5 +270,20 @@ class DraftToolsTests(unittest.TestCase):
                 self.assertEqual(hist_res[0]['duration_ms'], 800)
 
 
+            # Test peek_draft
+            code_peek = 'line1\nline2\nline3\nline4\nline5\n'
+            (Path(directory) / 'peek_test.py').write_text(code_peek, encoding='utf-8')
+            peek_res = json.loads(tools.handle('peek_draft', {'path': 'peek_test.py', 'start_line': 2, 'end_line': 4}))
+            self.assertEqual(peek_res['start_line'], 2)
+            self.assertEqual(peek_res['end_line'], 4)
+            self.assertEqual(len(peek_res['lines']), 3)
+            self.assertIn('   2: line2', peek_res['content'])
+
+            # Test normalize_tool_args parameter alias absorption
+            norm_res = json.loads(tools.handle('peek_draft', {'filename': 'peek_test.py', 'start': 1, 'end': 2}))
+            self.assertEqual(norm_res['start_line'], 1)
+            self.assertEqual(norm_res['end_line'], 2)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -24,6 +24,20 @@ class PacingTests(unittest.TestCase):
         self.assertEqual(res['status'], 'exhausted')
         self.assertEqual(res['recommended_max_tool_rounds'], 0)
 
+    def test_cpu_cooler_cooldown(self):
+        from miniagent.pacing import CPUCooler
+        cooler = CPUCooler(window_seconds=60.0, heavy_threshold_seconds=1.0)
+        self.assertEqual(cooler.get_recommended_cooldown(), 0.0)
+
+        # Record a single heavy event
+        cooler.record_compute("canary_run", 2.0)
+        self.assertEqual(cooler.get_recommended_cooldown(), 1.0)
+
+        # Record multiple heavy events
+        cooler.record_compute("ast_sweep", 3.0)
+        cooler.record_compute("wal_truncate", 2.5)
+        self.assertGreaterEqual(cooler.get_recommended_cooldown(), 5.0)
+
 
 if __name__ == '__main__':
     unittest.main()

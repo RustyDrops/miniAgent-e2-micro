@@ -50,11 +50,16 @@ def generate_morning_briefing(queue, budget=None, workspace_root=None, hours=8):
     # 5. Objectives count
     obj_count = len(queue.objectives()) if hasattr(queue, 'objectives') else 0
 
+    # 6. Autonomous streak & goal from Soul
+    from .soul import Soul
+    soul = Soul.load(root)
+
     date_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     pct_left = max(0.0, (1.0 - (spent_today_usd / limit_today_usd))) * 100 if limit_today_usd else 100.0
 
     lines = [
         f"🌅 *MiniAgent Morning Briefing — {date_str}*",
+        f"• *Streak*: {soul.streak_days} days active · Focus: {soul.active_goal}",
         f"• *Overnight Tasks*: {total_jobs} run ({succeeded} ok, {failed} failed)",
         f"• *Today's Ledger*: \\${spent_today_usd:.4f} / \\${limit_today_usd:.2f} ({pct_left:.1f}% budget available)",
         f"• *Latest Learning*: {learning_str}",

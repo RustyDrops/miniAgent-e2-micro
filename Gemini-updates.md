@@ -257,5 +257,30 @@ OK
   - `log_task(session_id, prompt, summary, artifacts) -> int`
   - `fetch_session_history(session_id, limit=10) -> List[sqlite3.Row]`
 
+---
+
+## 10. Edge-Agent Optimizations Ported from Picoling
+
+### A. Tool Argument Alias Normalizer ("The Hallucination Sponge")
+* **Files**: `miniagent/tools/__init__.py`
+* **Implementation**: Intercepts tool calls and transparently maps parameter aliases (`file_path` $\to$ `path`, `script` $\to$ `code`, `term` $\to$ `query`, `count` $\to$ `limit`). Eliminates tool validation failures and costly retry rounds.
+
+### B. Bounded HTTP Streaming Client (`miniagent/bounded_http.py`)
+* **Files**: `miniagent/bounded_http.py`
+* **Implementation**: Streams responses in 4 KB chunks with a hard ceiling (`ResponseTooLarge`). Prevents unexpected multi-megabyte payloads from causing memory spikes on the 1 GB VM.
+
+### C. Soul & Survival Streak Tracker (`miniagent/soul.py`)
+* **Files**: `miniagent/soul.py`, `miniagent/badges.py`, `miniagent/morning.py`, `miniagent/housekeeping.py`
+* **Implementation**: Tracks consecutive active days without budget breach or unhandled crash, current overarching goal, and cumulative spend. Persists to `soul.json` and updates `site/badges/streak.svg`.
+
+### D. Zero-Token Local Peeker (`peek_draft` Tool & Telegram `/peek`)
+* **Files**: `miniagent/tools/__init__.py`, `miniagent/__main__.py`
+* **Implementation**: Reads specific line ranges (`[start_line, end_line]`) with line numbers from drafts at negligible token footprint. Available as a tool and directly in Telegram without invoking the LLM.
+
+### E. CPU Burst Credit Cooler (`miniagent/pacing.py`)
+* **Files**: `miniagent/pacing.py`
+* **Implementation**: `CPUCooler` records heavy compute durations (canary verification, AST analysis) and applies dynamic cooldown pauses to protect the `e2-micro`'s 0.25 vCPU baseline from hypervisor throttling.
+
+
 
 

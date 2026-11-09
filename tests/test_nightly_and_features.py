@@ -62,11 +62,12 @@ class NightlyAndFeaturesTests(unittest.TestCase):
         self.assertIn('passing', svg)
 
         res = update_status_badges(workspace_root=self.workspace, budget=self.budget, test_count=103)
-        self.assertEqual(len(res['badges']), 3)
+        self.assertEqual(len(res['badges']), 4)
         badge_dir = self.workspace / res['dir']
         self.assertTrue((badge_dir / 'budget.svg').is_file())
         self.assertTrue((badge_dir / 'tests.svg').is_file())
         self.assertTrue((badge_dir / 'health.svg').is_file())
+        self.assertTrue((badge_dir / 'streak.svg').is_file())
 
         budget_content = (badge_dir / 'budget.svg').read_text(encoding='utf-8')
         self.assertIn('budget', budget_content)

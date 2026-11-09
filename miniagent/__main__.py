@@ -199,7 +199,7 @@ def telegram_loop(config):
                     parts = task.split(maxsplit=2)
                     command = parts[0].split('@')[0].lower()
                     if command in ('/start', '/help'):
-                        send('Send a task as a message. Commands: /status, /health, /budget, /jobs, /job ID, /cancel ID, /questions, /answer ID TEXT, /pause, /resume, /schedule HOURS TASK, /objectives, /unschedule ID, /journal [daily|weekly], /router, /morning, /nightly, /badges, /draft_release [TAG], /preview PATH, /publish PATH SHA256, /publish_update PATH SHA256 [direct], /publish_site SHA256, /preview_bundle DIR, /publish_bundle DIR SHA256. Recurring tasks start after the interval, minimum 6 hours.')
+                        send('Send a task as a message. Commands: /status, /health, /budget, /jobs, /job ID, /cancel ID, /questions, /answer ID TEXT, /pause, /resume, /schedule HOURS TASK, /objectives, /unschedule ID, /journal [daily|weekly], /router, /morning, /nightly, /badges, /soul, /peek PATH [START] [END], /draft_release [TAG], /preview PATH, /publish PATH SHA256, /publish_update PATH SHA256 [direct], /publish_site SHA256, /preview_bundle DIR, /publish_bundle DIR SHA256. Recurring tasks start after the interval, minimum 6 hours.')
                     elif command == '/status':
                         spent, limit = budget.today()
                         send(f"{'Paused' if queue.paused() else 'Running'}; jobs: {queue.counts()}; recurring objectives: {len(queue.objectives())}; model ledger today (UTC): ${spent/1e6:.4f} / ${limit/1e6:.2f}.")
@@ -421,9 +421,36 @@ def telegram_loop(config):
                             from .tools import ROOT
                             from .badges import update_status_badges
                             res = update_status_badges(workspace_root=ROOT, budget=budget)
-                            send(f"Status badges generated in {res['dir']}/\n- Budget: {res['budget_val']}\n- Canary: {res['test_val']}\nBadges: {', '.join(res['badges'])}")
+                            send(f"Status badges generated in {res['dir']}/\n- Budget: {res['budget_val']}\n- Canary: {res['test_val']}\n- Streak: {res.get('streak_val', '1 day')}\nBadges: {', '.join(res['badges'])}")
                         except Exception as exc:
                             send('Badge generation failed: ' + type(exc).__name__)
+                    elif command == '/soul':
+                        try:
+                            from .soul import Soul
+                            from .tools import ROOT
+                            soul = Soul.load(ROOT)
+                            send(f"🔮 Identity: {soul.name}\n"
+                                 f"🔥 Survival Streak: {soul.streak_days} days continuous\n"
+                                 f"🎯 Current Focus: {soul.active_goal}\n"
+                                 f"📊 Tasks Completed: {soul.total_tasks_completed}\n"
+                                 f"💰 Cumulative Spend: ${soul.total_usd_spent:.4f}\n"
+                                 f"📅 Active Since: {soul.created_at}")
+                        except Exception as exc:
+                            send('Soul status unavailable: ' + type(exc).__name__)
+                    elif command == '/peek':
+                        try:
+                            if len(parts) < 2:
+                                send('Usage: /peek PATH [START_LINE] [END_LINE]')
+                            else:
+                                from .tools import peek_draft
+                                path = parts[1]
+                                start_l = int(parts[2]) if len(parts) > 2 else 1
+                                end_l = int(parts[3]) if len(parts) > 3 else None
+                                res = peek_draft(path, start_line=start_l, end_line=end_l)
+                                msg = f"📄 {res['path']} (lines {res['start_line']}-{res['end_line']} of {res['total_lines']}):\n```\n{res['content']}\n```"
+                                send(msg)
+                        except Exception as exc:
+                            send(f"Peek failed: {exc}")
                     elif command == '/draft_release':
                         try:
                             from .tools import ROOT

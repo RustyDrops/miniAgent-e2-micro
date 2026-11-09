@@ -77,4 +77,15 @@ def run_nightly_consolidation(db_path=None, workspace_root=None):
     except Exception as exc:
         report['canary_error'] = type(exc).__name__
 
+    # 6. Soul streak and survival progression
+    try:
+        from .soul import Soul
+        soul = Soul.load(root)
+        canary_ok = report.get('canary_passed', True)
+        soul.record_daily_activity(budget_breached=not canary_ok)
+        soul.save(root)
+        report['streak_days'] = soul.streak_days
+    except Exception as exc:
+        report['soul_error'] = type(exc).__name__
+
     return report

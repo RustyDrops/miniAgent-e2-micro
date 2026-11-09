@@ -70,9 +70,17 @@ def update_status_badges(workspace_root=None, budget=None, test_count=103):
     health_svg = render_svg_badge('e2-micro', '38MB RAM (healthy)', color='#007ec6')
     (badge_dir / 'health.svg').write_text(health_svg, encoding='utf-8')
 
+    # 4. Survival & autonomy streak badge
+    from .soul import Soul
+    soul = Soul.load(root)
+    streak_val = f"{soul.streak_days} days active"
+    streak_svg = render_svg_badge('streak', streak_val, color='#00b4d8')
+    (badge_dir / 'streak.svg').write_text(streak_svg, encoding='utf-8')
+
     return {
         'dir': str(badge_dir.relative_to(root)),
-        'badges': ['budget.svg', 'tests.svg', 'health.svg'],
+        'badges': ['budget.svg', 'tests.svg', 'health.svg', 'streak.svg'],
         'budget_val': budget_val,
-        'test_val': test_val
+        'test_val': test_val,
+        'streak_val': streak_val
     }

@@ -114,6 +114,8 @@ SCHEMAS = [
            {'tag': {'type': 'string'}}, []),
     schema('run_sandboxed_code', 'Execute python code inside an ephemeral Cloud Run sandbox container.',
            {'code': {'type': 'string'}, 'runtime': {'type': 'string'}, 'timeout': {'type': 'integer'}}, ['code']),
+    schema('peek_draft', 'Read an exact line range from a UTF-8 draft file with line numbers without reading the full file. Line indices are 1-based.',
+           {'path': {'type': 'string'}, 'start_line': {'type': 'integer', 'minimum': 1}, 'end_line': {'type': 'integer', 'minimum': 1}}, ['path']),
 ]
 
 
@@ -447,6 +449,33 @@ def ast_linter(path):
     return {'path': str(target.relative_to(ROOT)), 'status': 'clean' if not issues else 'warnings_found', 'issues': issues[:10]}
 
 
+def peek_draft(path, start_line=1, end_line=None):
+    target = safe_path(path)
+    if not target.is_file():
+        raise ValueError('Draft does not exist')
+    lines = target.read_text(encoding='utf-8', errors='replace').splitlines()
+    total_lines = len(lines)
+    start = max(1, int(start_line))
+    if end_line is None:
+        end = min(total_lines, start + 49)
+    else:
+        end = min(total_lines, max(start, int(end_line)))
+
+    if end - start + 1 > 150:
+        end = start + 149
+
+    sliced = lines[start - 1:end]
+    formatted = [f"{start + i:4d}: {line}" for i, line in enumerate(sliced)]
+    return {
+        'path': str(target.relative_to(ROOT)),
+        'total_lines': total_lines,
+        'start_line': start,
+        'end_line': end,
+        'lines': formatted,
+        'content': '\n'.join(formatted)
+    }
+
+
 def _handle_inner(name, args):
     try:
         if name == 'system_health':
@@ -680,14 +709,65 @@ def _handle_inner(name, args):
             runtime = str(args.get('runtime', 'python3'))
             timeout = int(args.get('timeout', 30))
             return json.dumps(run_sandboxed_code(code, runtime=runtime, timeout=timeout), ensure_ascii=False)
+        if name == 'peek_draft':
+            return json.dumps(peek_draft(args['path'], args.get('start_line', 1), args.get('end_line')), ensure_ascii=False)
         raise ValueError('Unknown tool')
     except Exception as exc:
         return 'Tool failed: ' + type(exc).__name__
 
 
+def normalize_tool_args(name, args):
+    """Normalize common model parameter hallucinations into expected schema keys."""
+    if not isinstance(args, dict):
+        return args
+    norm = dict(args)
+    # Path aliases
+    for key in ('file_path', 'filepath', 'filename', 'file_name', 'target', 'file'):
+        if key in norm and 'path' not in norm:
+            norm['path'] = norm[key]
+    # Content aliases
+    for key in ('code', 'data', 'text', 'script', 'body'):
+        if key in norm and 'content' not in norm:
+            norm['content'] = norm[key]
+    # Query aliases
+    for key in ('q', 'search_query', 'search_term', 'term'):
+        if key in norm and 'query' not in norm:
+            norm['query'] = norm[key]
+    # Limit aliases
+    for key in ('count', 'max_items', 'max_results', 'size'):
+        if key in norm and 'limit' not in norm:
+            norm['limit'] = norm[key]
+    # Hours aliases
+    for key in ('hour', 'time_range', 'range_hours'):
+        if key in norm and 'hours' not in norm:
+            norm['hours'] = norm[key]
+    # Offset aliases
+    for key in ('start_offset', 'start_char', 'char_offset'):
+        if key in norm and 'offset' not in norm:
+            norm['offset'] = norm[key]
+    # Title aliases
+    for key in ('name', 'page_title', 'article_title'):
+        if key in norm and 'title' not in norm and name != 'write_draft':
+            norm['title'] = norm[key]
+    # Runtime aliases
+    for key in ('lang', 'language'):
+        if key in norm and 'runtime' not in norm:
+            norm['runtime'] = norm[key]
+    # Line range aliases
+    for key in ('start', 'from_line', 'start_l'):
+        if key in norm and 'start_line' not in norm:
+            norm['start_line'] = norm[key]
+    for key in ('end', 'to_line', 'end_l'):
+        if key in norm and 'end_line' not in norm:
+            norm['end_line'] = norm[key]
+    return norm
+
+
 def handle(name, args):
+    args = normalize_tool_args(name, args)
     cache_eligible = name in ('check_python_syntax', 'python_symbol_outline', 'grep_draft',
-                              'draft_stats', 'extract_markdown_toc', 'ast_linter', 'web_search', 'estimate_token_cost')
+                              'draft_stats', 'extract_markdown_toc', 'ast_linter', 'web_search',
+                              'estimate_token_cost', 'peek_draft')
     cache = None
     target_sha = ''
     if cache_eligible:
