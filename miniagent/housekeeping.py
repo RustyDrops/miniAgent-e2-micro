@@ -41,6 +41,17 @@ def run_nightly_consolidation(db_path=None, workspace_root=None):
     except Exception as exc:
         report['sqlite_error'] = type(exc).__name__
 
+    # 2b. Memory DB WAL truncation & retention pruning
+    try:
+        from miniagent.memory.db import checkpoint_memory_db, prune_session_history, get_db_path
+        mem_db = os.environ.get('MINIAGENT_DB_PATH', get_db_path())
+        if os.path.exists(mem_db):
+            checkpoint_memory_db(mode='TRUNCATE', db_path=mem_db)
+            report['memory_pruned'] = prune_session_history(days=30, db_path=mem_db)
+            report['memory_wal_truncated'] = True
+    except Exception as exc:
+        report['memory_db_error'] = type(exc).__name__
+
     # 3. Knowledge base deduplication
     try:
         from . import knowledge

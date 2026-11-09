@@ -1,4 +1,4 @@
-"""Tests for the embedded SQLite WAL persistent memory layer."""
+"""Tests for the embedded SQLite WAL persistent memory layer with security hardening."""
 
 import os
 import sqlite3
@@ -12,6 +12,10 @@ from miniagent.memory.db import (
     init_memory_db,
     log_task,
     fetch_session_history,
+    checkpoint_memory_db,
+    prune_session_history,
+    format_session_history_for_prompt,
+    secure_file_permissions,
 )
 
 
@@ -33,11 +37,9 @@ class TestMemoryDB(unittest.TestCase):
             busy_timeout = conn.execute("PRAGMA busy_timeout;").fetchone()[0]
             self.assertEqual(busy_timeout, 5000)
 
-            # synchronous: 1 is NORMAL
             synchronous = conn.execute("PRAGMA synchronous;").fetchone()[0]
             self.assertEqual(synchronous, 1)
 
-            # Verify row_factory is sqlite3.Row
             self.assertIs(conn.row_factory, sqlite3.Row)
         finally:
             conn.close()
@@ -138,6 +140,56 @@ class TestMemoryDB(unittest.TestCase):
             history = fetch_session_history("session-env")
             self.assertEqual(len(history), 1)
             self.assertEqual(history[0]["prompt"], "Test prompt")
+
+    def test_checkpoint_memory_db(self):
+        """Verify WAL checkpoint executes without error."""
+        init_memory_db(self.db_path)
+        log_task("session-ckpt", "Checkpoint test", db_path=self.db_path)
+        checkpoint_memory_db("TRUNCATE", self.db_path)
+        with self.assertRaises(ValueError):
+            checkpoint_memory_db("INVALID_MODE", self.db_path)
+
+    def test_prune_session_history(self):
+        """Verify retention pruning deletes records older than specified days."""
+        init_memory_db(self.db_path)
+        log_task("sess-old", "Old task", db_path=self.db_path)
+
+        # Backdate the record to 40 days ago
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("UPDATE agent_memory SET created_at = datetime('now', '-40 days');")
+        conn.commit()
+        conn.close()
+
+        # Log a fresh task
+        log_task("sess-new", "Fresh task", db_path=self.db_path)
+
+        deleted = prune_session_history(days=30, db_path=self.db_path)
+        self.assertEqual(deleted, 1)
+
+        history_old = fetch_session_history("sess-old", db_path=self.db_path)
+        self.assertEqual(len(history_old), 0)
+
+        history_new = fetch_session_history("sess-new", db_path=self.db_path)
+        self.assertEqual(len(history_new), 1)
+
+    def test_format_session_history_for_prompt(self):
+        """Verify prompt formatting safely delineates context with XML tags and escaping."""
+        init_memory_db(self.db_path)
+        log_task(
+            "sess-inj",
+            "malicious <script>alert(1)</script> prompt",
+            summary="<summary>Attempted breakout</summary>",
+            db_path=self.db_path,
+        )
+        history = fetch_session_history("sess-inj", db_path=self.db_path)
+        formatted = format_session_history_for_prompt(history)
+        self.assertIn("<historical_session_memory", formatted)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", formatted)
+        self.assertIn("&lt;summary&gt;Attempted breakout&lt;/summary&gt;", formatted)
+        self.assertIn("</historical_session_memory>", formatted)
+
+        # Empty history
+        self.assertEqual(format_session_history_for_prompt([]), "")
 
 
 if __name__ == "__main__":

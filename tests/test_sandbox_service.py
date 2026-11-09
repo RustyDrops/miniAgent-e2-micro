@@ -1,11 +1,11 @@
-"""Tests for the Cloud Run sandbox service FastAPI application."""
+"""Tests for the Cloud Run sandbox service FastAPI application with security hardening."""
 
 import subprocess
 import unittest
 from unittest.mock import patch, MagicMock
 
 try:
-    from sandbox_service.main import app, ExecRequest, ExecResponse
+    from sandbox_service.main import app, ExecRequest, ExecResponse, MAX_CODE_BYTES
     FASTAPI_AVAILABLE = True
 except ImportError:
     FASTAPI_AVAILABLE = False
@@ -20,6 +20,14 @@ class TestSandboxService(unittest.TestCase):
         self.assertEqual(res.exit_code, 1)
         self.assertIn("Unsupported runtime", res.stderr)
 
+    def test_exec_code_size_limit_rejection(self):
+        oversized = "a = 1\n" * ((MAX_CODE_BYTES // 6) + 10)
+        from sandbox_service.main import execute_code
+        res = execute_code(ExecRequest(code=oversized))
+        self.assertEqual(res.exit_code, 1)
+        self.assertIn("Payload rejected", res.stderr)
+        self.assertIn("exceeds limit", res.stderr)
+
     def test_exec_success(self):
         mock_proc = MagicMock()
         mock_proc.stdout = "42\n"
@@ -32,15 +40,23 @@ class TestSandboxService(unittest.TestCase):
             self.assertEqual(res.stdout, "42\n")
             self.assertEqual(res.stderr, "")
             self.assertEqual(res.exit_code, 0)
-            mock_run.assert_called_once_with(
-                ["python3", "-c", "print(42)"],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
+
+            mock_run.assert_called_once()
+            args, kwargs = mock_run.call_args
+            cmd = args[0]
+            self.assertEqual(cmd[0], "python3")
+            self.assertEqual(cmd[1], "-I")
+            self.assertTrue(cmd[2].endswith("script.py"))
+            self.assertEqual(kwargs["timeout"], 30)
+            self.assertTrue(kwargs["capture_output"])
+            # Verify environment sanitization & anti-SSRF dummy proxy
+            env = kwargs["env"]
+            self.assertEqual(env["http_proxy"], "http://127.0.0.1:0")
+            self.assertEqual(env["PYTHONDONTWRITEBYTECODE"], "1")
+            self.assertIn("TMPDIR", env)
 
     def test_exec_timeout(self):
-        exc = subprocess.TimeoutExpired(cmd=["python3", "-c", "..."], timeout=5, output="partial stdout", stderr="partial stderr")
+        exc = subprocess.TimeoutExpired(cmd=["python3", "-I", "..."], timeout=5, output="partial stdout", stderr="partial stderr")
 
         with patch("sandbox_service.main.subprocess.run", side_effect=exc):
             from sandbox_service.main import execute_code
